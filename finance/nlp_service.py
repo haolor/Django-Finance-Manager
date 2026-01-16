@@ -54,31 +54,51 @@ class NLPService:
         
         # Tìm số tiền (50k, 100000, 50.000đ, etc.)
         amount_patterns = [
-            r'(\d+(?:\.\d+)?)\s*k\b',  # 50k, 100k
-            r'(\d+(?:\.\d+)?)\s*ngàn\b',  # 50 ngàn
-            r'(\d+(?:\.\d+)?)\s*nghìn\b',  # 50 nghìn
-            r'(\d+(?:\.\d+)?)\s*đ\b',  # 50000đ
-            r'(\d+(?:\.\d+)?)\s*đồng\b',  # 50000 đồng
-            r'(\d+(?:\.\d+)?)\s*vnd\b',  # 50000 vnd
-            r'(\d+(?:\.\d+)?)\s*triệu\b',  # 1 triệu
+            (r'(\d+(?:\.\d+)?)\s*triệu\b', 1000000),  # 1 triệu = 1,000,000
+            (r'(\d+(?:\.\d+)?)\s*k\b', 1000),  # 50k = 50,000
+            (r'(\d+(?:\.\d+)?)\s*ngàn\b', 1000),  # 50 ngàn = 50,000
+            (r'(\d+(?:\.\d+)?)\s*nghìn\b', 1000),  # 50 nghìn = 50,000
+            (r'(\d{1,3}(?:\.\d{3})*(?:,\d+)?)\s*đ\b', 1),  # 50.000đ hoặc 50,000đ
+            (r'(\d{1,3}(?:\.\d{3})*(?:,\d+)?)\s*đồng\b', 1),  # 50.000 đồng
+            (r'(\d{1,3}(?:\.\d{3})*(?:,\d+)?)\s*vnd\b', 1),  # 50.000 vnd
+            (r'(\d+(?:\.\d+)?)\s*đ\b', 1),  # 50000đ
+            (r'(\d+(?:\.\d+)?)\s*đồng\b', 1),  # 50000 đồng
         ]
         
-        for pattern in amount_patterns:
-            match = re.search(pattern, text)
-            if match:
-                value = float(match.group(1))
-                if 'triệu' in pattern:
-                    value *= 1000000
-                elif 'k' in pattern or 'ngàn' in pattern or 'nghìn' in pattern:
-                    value *= 1000
-                result['amount'] = Decimal(str(value))
-                break
+        found_amounts = []
+        for pattern, multiplier in amount_patterns:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                value_str = match.group(1).replace('.', '').replace(',', '.')
+                try:
+                    value = float(value_str) * multiplier
+                    found_amounts.append((value, match.start()))
+                except ValueError:
+                    continue
         
-        # Nếu không tìm thấy số tiền, tìm số nguyên
+        # Lấy số tiền lớn nhất (thường là số tiền chính)
+        if found_amounts:
+            found_amounts.sort(key=lambda x: x[0], reverse=True)
+            result['amount'] = Decimal(str(int(found_amounts[0][0])))
+        
+        # Nếu không tìm thấy số tiền với pattern, tìm số nguyên lớn nhất
         if result['amount'] is None:
-            number_match = re.search(r'\b(\d+(?:\.\d+)?)\b', text)
-            if number_match:
-                result['amount'] = Decimal(number_match.group(1))
+            number_matches = re.finditer(r'\b(\d{4,})\b', text)  # Tìm số có ít nhất 4 chữ số
+            amounts = []
+            for match in number_matches:
+                try:
+                    value = float(match.group(1))
+                    amounts.append(value)
+                except ValueError:
+                    continue
+            
+            if amounts:
+                result['amount'] = Decimal(str(int(max(amounts))))
+            else:
+                # Tìm bất kỳ số nào
+                number_match = re.search(r'\b(\d+(?:\.\d+)?)\b', text)
+                if number_match:
+                    result['amount'] = Decimal(number_match.group(1))
         
         # Xác định loại giao dịch (thu hoặc chi)
         income_keywords = ['thu', 'nhận', 'lương', 'kiếm', 'bán', 'doanh thu']
@@ -89,12 +109,19 @@ class NLPService:
         elif any(keyword in text for keyword in expense_keywords):
             result['type'] = 'expense'
         
-        # Tìm danh mục
+        # Tìm danh mục (ưu tiên match dài hơn)
+        category_matches = []
         for keyword_group, category_name in NLPService.KEYWORD_TO_CATEGORY.items():
             keywords = NLPService.CATEGORY_KEYWORDS.get(keyword_group, [])
-            if any(keyword in text for keyword in keywords):
-                result['category'] = category_name
-                break
+            for keyword in keywords:
+                if keyword in text:
+                    category_matches.append((len(keyword), category_name))
+                    break
+        
+        if category_matches:
+            # Chọn category có keyword dài nhất (match chính xác hơn)
+            category_matches.sort(key=lambda x: x[0], reverse=True)
+            result['category'] = category_matches[0][1]
         
         # Xác định ngày tháng
         date_patterns = {

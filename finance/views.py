@@ -135,26 +135,37 @@ class TransactionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def nlp_input(self, request):
         """Xử lý nhập liệu bằng ngôn ngữ tự nhiên"""
-        text = request.data.get('text', '')
+        text = request.data.get('text', '').strip()
         if not text:
             return Response(
-                {'error': 'Text is required'},
+                {'error': 'Vui lòng nhập câu mô tả giao dịch. Ví dụ: "Hôm nay chi 50k ăn sáng"'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Phân tích NLP
-        nlp_result = NLPService.extract_transaction_info(text)
-        
-        # Tìm hoặc tạo category
-        category = None
-        if nlp_result['category']:
-            category = NLPService.get_or_create_category(
-                nlp_result['category'],
-                nlp_result['type']
-            )
-        
-        # Tạo transaction
-        if nlp_result['amount']:
+        try:
+            # Phân tích NLP
+            nlp_result = NLPService.extract_transaction_info(text)
+            
+            # Kiểm tra số tiền
+            if not nlp_result['amount']:
+                return Response(
+                    {'error': 'Không tìm thấy số tiền trong câu. Vui lòng nhập rõ số tiền.\nVí dụ: "Chi 50k ăn sáng", "Chi 100000 mua quần áo"'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Tìm hoặc tạo category
+            category = None
+            if nlp_result['category']:
+                try:
+                    category = NLPService.get_or_create_category(
+                        nlp_result['category'],
+                        nlp_result['type']
+                    )
+                except Exception as e:
+                    # Nếu không tạo được category, vẫn tiếp tục với category = None
+                    pass
+            
+            # Tạo transaction
             transaction = Transaction.objects.create(
                 user=request.user,
                 category=category,
@@ -165,13 +176,18 @@ class TransactionViewSet(viewsets.ModelViewSet):
             )
             
             # Cập nhật spending patterns
-            AIService.update_spending_patterns(request.user)
+            try:
+                AIService.update_spending_patterns(request.user)
+            except Exception:
+                # Không block nếu update pattern thất bại
+                pass
             
             serializer = self.get_serializer(transaction)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
+            
+        except Exception as e:
             return Response(
-                {'error': 'Could not extract amount from text'},
+                {'error': f'Lỗi xử lý: {str(e)}. Vui lòng thử lại với định dạng khác.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
     

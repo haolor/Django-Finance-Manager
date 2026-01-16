@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import api from '../services/api'
 import { format } from 'date-fns'
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, PencilIcon, TrashIcon, MicrophoneIcon } from '@heroicons/react/24/outline'
 
 function Transactions() {
   const [transactions, setTransactions] = useState([])
@@ -11,6 +11,10 @@ function Transactions() {
   const [editingTransaction, setEditingTransaction] = useState(null)
   const [nlpInput, setNlpInput] = useState('')
   const [showNlpModal, setShowNlpModal] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [nlpError, setNlpError] = useState('')
+  const [nlpLoading, setNlpLoading] = useState(false)
+  const recognitionRef = useRef(null)
   const [formData, setFormData] = useState({
     amount: '',
     description: '',
@@ -37,15 +41,102 @@ function Transactions() {
     }
   }
 
+  // Khởi tạo Speech Recognition
+  useEffect(() => {
+    if (showNlpModal) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition()
+        recognition.lang = 'vi-VN'
+        recognition.continuous = false
+        recognition.interimResults = false
+        
+        recognition.onstart = () => {
+          setIsListening(true)
+          setNlpError('')
+        }
+        
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript
+          setNlpInput(prev => prev + (prev ? ' ' : '') + transcript)
+          setIsListening(false)
+        }
+        
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error)
+          setIsListening(false)
+          if (event.error === 'no-speech') {
+            setNlpError('Không phát hiện giọng nói. Vui lòng thử lại.')
+          } else if (event.error === 'not-allowed') {
+            setNlpError('Vui lòng cho phép truy cập microphone.')
+          } else {
+            setNlpError('Lỗi nhận diện giọng nói. Vui lòng thử lại.')
+          }
+        }
+        
+        recognition.onend = () => {
+          setIsListening(false)
+        }
+        
+        recognitionRef.current = recognition
+      }
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+        recognitionRef.current = null
+      }
+    }
+  }, [showNlpModal])
+
+  const startListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start()
+        setNlpError('')
+      } catch (error) {
+        console.error('Error starting recognition:', error)
+        setNlpError('Không thể bắt đầu nhận diện giọng nói.')
+      }
+    } else {
+      setNlpError('Trình duyệt không hỗ trợ nhận diện giọng nói. Vui lòng sử dụng Chrome hoặc Edge.')
+    }
+  }
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    }
+  }
+
   const handleNlpSubmit = async (e) => {
     e.preventDefault()
+    if (!nlpInput.trim()) {
+      setNlpError('Vui lòng nhập hoặc nói câu mô tả giao dịch.')
+      return
+    }
+    
+    setNlpLoading(true)
+    setNlpError('')
+    
     try {
-      await api.post('/transactions/nlp_input/', { text: nlpInput })
+      const response = await api.post('/transactions/nlp_input/', { text: nlpInput })
       setNlpInput('')
       setShowNlpModal(false)
+      setNlpError('')
       fetchData()
+      // Hiển thị thông báo thành công
+      alert('Đã thêm giao dịch thành công!')
     } catch (error) {
-      alert('Không thể xử lý câu nhập liệu. Vui lòng thử lại.')
+      console.error('NLP error:', error)
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.detail ||
+                          'Không thể xử lý câu nhập liệu. Vui lòng kiểm tra lại định dạng.\n\nVí dụ: "Hôm nay chi 50k ăn sáng", "Chi 100000 mua quần áo"'
+      setNlpError(errorMessage)
+    } finally {
+      setNlpLoading(false)
     }
   }
 
@@ -136,30 +227,68 @@ function Transactions() {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">Nhập liệu bằng ngôn ngữ tự nhiên</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Ví dụ: "Hôm nay chi 50k ăn sáng", "Chi 100000 mua quần áo"
+              Ví dụ: "Hôm nay chi 50k ăn sáng", "Chi 100000 mua quần áo", "Nhận lương 10 triệu"
             </p>
+            
+            {nlpError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+                {nlpError}
+              </div>
+            )}
+            
             <form onSubmit={handleNlpSubmit}>
-              <textarea
-                value={nlpInput}
-                onChange={(e) => setNlpInput(e.target.value)}
-                placeholder="Nhập câu mô tả giao dịch..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
-                rows={3}
-                required
-              />
+              <div className="relative mb-4">
+                <textarea
+                  value={nlpInput}
+                  onChange={(e) => {
+                    setNlpInput(e.target.value)
+                    setNlpError('')
+                  }}
+                  placeholder="Nhập câu mô tả giao dịch hoặc nhấn nút microphone để nói..."
+                  className="w-full px-4 py-2 pr-12 border border-gray-300 rounded-lg resize-none"
+                  rows={4}
+                />
+                <button
+                  type="button"
+                  onClick={isListening ? stopListening : startListening}
+                  className={`absolute right-2 top-2 p-2 rounded-full transition-colors ${
+                    isListening 
+                      ? 'bg-red-500 text-white animate-pulse' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                  title={isListening ? 'Dừng ghi âm' : 'Bắt đầu ghi âm'}
+                >
+                  <MicrophoneIcon className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {isListening && (
+                <div className="mb-4 text-sm text-purple-600 flex items-center">
+                  <div className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></div>
+                  Đang nghe... Hãy nói câu mô tả giao dịch của bạn
+                </div>
+              )}
+              
               <div className="flex justify-end space-x-4">
                 <button
                   type="button"
-                  onClick={() => setShowNlpModal(false)}
+                  onClick={() => {
+                    setShowNlpModal(false)
+                    setNlpInput('')
+                    setNlpError('')
+                    stopListening()
+                  }}
                   className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={nlpLoading}
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  disabled={nlpLoading || !nlpInput.trim()}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Xử lý
+                  {nlpLoading ? 'Đang xử lý...' : 'Xử lý'}
                 </button>
               </div>
             </form>
