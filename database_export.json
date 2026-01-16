@@ -1,0 +1,135 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Ăn uống",
+      "description": "",
+      "icon": "🍔",
+      "color": "#EF4444",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.811843+00:00"
+    },
+    {
+      "id": 12,
+      "name": "Đầu tư",
+      "description": "",
+      "icon": "📈",
+      "color": "#10B981",
+      "type": "income",
+      "created_at": "2026-01-16T09:54:49.832480+00:00"
+    },
+    {
+      "id": 2,
+      "name": "Di chuyển",
+      "description": "",
+      "icon": "🚗",
+      "color": "#3B82F6",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.816231+00:00"
+    },
+    {
+      "id": 3,
+      "name": "Giải trí",
+      "description": "",
+      "icon": "🎬",
+      "color": "#8B5CF6",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.817792+00:00"
+    },
+    {
+      "id": 8,
+      "name": "Hóa đơn",
+      "description": "",
+      "icon": "📄",
+      "color": "#6366F1",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.825678+00:00"
+    },
+    {
+      "id": 6,
+      "name": "Học tập",
+      "description": "",
+      "icon": "📚",
+      "color": "#F59E0B",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.822475+00:00"
+    },
+    {
+      "id": 9,
+      "name": "Khác",
+      "description": "",
+      "icon": "📦",
+      "color": "#6B7280",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.827663+00:00"
+    },
+    {
+      "id": 10,
+      "name": "Lương",
+      "description": "",
+      "icon": "💵",
+      "color": "#10B981",
+      "type": "income",
+      "created_at": "2026-01-16T09:54:49.829319+00:00"
+    },
+    {
+      "id": 4,
+      "name": "Mua sắm",
+      "description": "",
+      "icon": "🛍️",
+      "color": "#EC4899",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.819518+00:00"
+    },
+    {
+      "id": 13,
+      "name": "Thu nhập khác",
+      "description": "",
+      "icon": "💳",
+      "color": "#10B981",
+      "type": "income",
+      "created_at": "2026-01-16T09:54:49.834311+00:00"
+    },
+    {
+      "id": 11,
+      "name": "Thu nhập kinh doanh",
+      "description": "",
+      "icon": "💼",
+      "color": "#10B981",
+      "type": "income",
+      "created_at": "2026-01-16T09:54:49.830858+00:00"
+    },
+    {
+      "id": 7,
+      "name": "Tiết kiệm",
+      "description": "",
+      "icon": "💰",
+      "color": "#14B8A6",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.824029+00:00"
+    },
+    {
+      "id": 5,
+      "name": "Y tế",
+      "description": "",
+      "icon": "🏥",
+      "color": "#10B981",
+      "type": "expense",
+      "created_at": "2026-01-16T09:54:49.821041+00:00"
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "username": "hao",
+      "email": "hao@gmail.com",
+      "first_name": "hao",
+      "last_name": "hao",
+      "date_joined": "2026-01-16T10:16:12.427026+00:00",
+      "is_active": true
+    }
+  ],
+  "transactions": [],
+  "budgets": [],
+  "spending_patterns": []
+}
