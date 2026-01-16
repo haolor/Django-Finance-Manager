@@ -155,9 +155,11 @@ class AIService:
                     'id': transaction.id,
                     'amount': float(transaction.amount),
                     'category': transaction.category.name if transaction.category else 'Unknown',
-                    'date': transaction.transaction_date.strftime('%Y-%m-%d'),
-                    'description': transaction.description,
+                    'category_icon': transaction.category.icon if transaction.category else '💰',
+                    'date': transaction.transaction_date.strftime('%d/%m/%Y'),
+                    'description': transaction.description or 'Không có mô tả',
                     'deviation': round((float(transaction.amount) - mean) / std_dev, 2) if std_dev > 0 else 0,
+                    'avg_amount': round(mean, 2),  # Số tiền trung bình để so sánh
                 })
         
         return sorted(anomalies, key=lambda x: x['amount'], reverse=True)
@@ -165,9 +167,9 @@ class AIService:
     @staticmethod
     def suggest_savings_plan(user: User) -> Dict:
         """
-        Gợi ý kế hoạch tiết kiệm
+        Gợi ý kế hoạch tiết kiệm chi tiết và cụ thể
         """
-        # Phân tích chi tiêu theo danh mục
+        # Phân tích chi tiêu theo danh mục (30 ngày gần nhất)
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=30)
         
@@ -178,35 +180,181 @@ class AIService:
             category__type='expense'
         )
         
-        category_totals = transactions.values('category__name').annotate(
+        # Lấy tổng thu nhập
+        income_transactions = Transaction.objects.filter(
+            user=user,
+            transaction_date__gte=start_date,
+            transaction_date__lte=end_date,
+            category__type='income'
+        )
+        total_income = income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        
+        category_totals = transactions.values('category__name', 'category__id').annotate(
             total=Sum('amount'),
-            count=Count('id')
+            count=Count('id'),
+            avg_amount=Avg('amount')
         ).order_by('-total')
         
         total_expense = transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
         
+        # Lấy budgets để so sánh
+        from .models import Budget
+        budgets = Budget.objects.filter(
+            user=user,
+            start_date__lte=end_date,
+            end_date__gte=start_date
+        )
+        budget_dict = {b.category_id: b.amount for b in budgets}
+        
         suggestions = []
-        for item in category_totals[:5]:  # Top 5 danh mục chi tiêu nhiều nhất
+        category_specific_tips = {
+            'Ăn uống': [
+                'Nấu ăn tại nhà thay vì ăn ngoài 2-3 lần/tuần',
+                'Lập danh sách mua sắm trước khi đi chợ/siêu thị',
+                'Tận dụng khuyến mãi và mua số lượng lớn cho đồ khô',
+                'Hạn chế đặt đồ ăn online, tự nấu sẽ tiết kiệm 30-50%'
+            ],
+            'Di chuyển': [
+                'Sử dụng phương tiện công cộng thay vì taxi/grab',
+                'Đi bộ hoặc xe đạp cho quãng đường ngắn',
+                'Sử dụng ứng dụng chia sẻ xe để giảm chi phí',
+                'Lên kế hoạch lộ trình để tránh đi lại không cần thiết'
+            ],
+            'Giải trí': [
+                'Tìm các hoạt động miễn phí trong khu vực',
+                'Sử dụng thẻ thành viên để được giảm giá',
+                'Hạn chế xem phim rạp, xem tại nhà hoặc chờ phim cũ',
+                'Tổ chức các buổi tụ tập tại nhà thay vì ra ngoài'
+            ],
+            'Mua sắm': [
+                'Mua sắm theo nhu cầu thực sự, tránh mua theo cảm xúc',
+                'So sánh giá trước khi mua, đợi sale nếu không gấp',
+                'Mua đồ chất lượng tốt một lần thay vì mua rẻ nhiều lần',
+                'Bán lại đồ không dùng đến trên các sàn thương mại điện tử'
+            ],
+            'Y tế': [
+                'Khám sức khỏe định kỳ để phát hiện sớm, tránh chi phí lớn',
+                'Mua bảo hiểm y tế để được hỗ trợ chi phí',
+                'Tập thể dục đều đặn để phòng bệnh',
+                'So sánh giá thuốc ở nhiều nhà thuốc khác nhau'
+            ],
+            'Hóa đơn': [
+                'Tắt các thiết bị điện khi không sử dụng',
+                'Sử dụng bóng đèn LED tiết kiệm điện',
+                'Kiểm tra và sửa chữa rò rỉ nước',
+                'Đàm phán lại gói cước internet/điện thoại phù hợp'
+            ],
+        }
+        
+        # Loại bỏ các category không nên cắt giảm
+        exclude_categories = ['Tiết kiệm', 'Đầu tư']  # Các category này không nên được gợi ý cắt giảm
+        
+        for item in category_totals[:6]:  # Top 6 danh mục
             category_name = item['category__name']
+            
+            # Bỏ qua các category không nên cắt giảm
+            if category_name in exclude_categories:
+                continue
+                
+            category_id = item['category__id']
             category_total = float(item['total'])
+            category_count = item['count']
+            avg_amount = float(item['avg_amount'])
             percentage = (category_total / float(total_expense) * 100) if total_expense > 0 else 0
             
-            if percentage > 30:  # Nếu chi tiêu > 30% tổng chi
+            # Tính toán mức độ ưu tiên
+            priority_score = 0
+            reasons = []
+            
+            # Kiểm tra vượt budget
+            if category_id in budget_dict:
+                budget_amount = float(budget_dict[category_id])
+                if category_total > budget_amount:
+                    priority_score += 3
+                    reasons.append(f'Đã vượt budget {((category_total - budget_amount) / budget_amount * 100):.1f}%')
+                    potential_savings = round((category_total - budget_amount) * 0.5, 2)  # Tiết kiệm 50% phần vượt
+                else:
+                    potential_savings = round(category_total * 0.15, 2)  # Tiết kiệm 15% nếu trong budget
+            else:
+                potential_savings = round(category_total * 0.2, 2)  # Tiết kiệm 20% nếu không có budget
+            
+            # Chiếm tỷ lệ cao
+            if percentage > 30:
+                priority_score += 2
+                reasons.append(f'Chiếm {percentage:.1f}% tổng chi tiêu')
+            elif percentage > 20:
+                priority_score += 1
+                reasons.append(f'Chiếm {percentage:.1f}% tổng chi tiêu')
+            
+            # Tần suất chi tiêu cao
+            if category_count > 10:
+                priority_score += 1
+                reasons.append(f'Chi tiêu {category_count} lần trong tháng')
+            
+            # Số tiền trung bình lớn
+            if avg_amount > float(total_expense) * 0.1:
+                priority_score += 1
+                reasons.append(f'Mỗi lần chi trung bình {avg_amount:,.0f}₫')
+            
+            # Chỉ thêm gợi ý nếu có tiềm năng tiết kiệm đáng kể
+            if potential_savings > 50000 or priority_score >= 2:  # Ít nhất 50k hoặc priority cao
+                # Lấy tips cụ thể cho category
+                tips = category_specific_tips.get(category_name, [
+                    f'Xem xét giảm chi tiêu cho {category_name}',
+                    f'Lập kế hoạch chi tiêu cho {category_name}',
+                    f'So sánh giá trước khi mua',
+                    f'Đặt mục tiêu giảm 10-20% chi tiêu cho {category_name}'
+                ])
+                
+                # Đảm bảo luôn có ít nhất 3 tips
+                if len(tips) < 3:
+                    tips.extend([
+                        f'Lập kế hoạch chi tiêu cho {category_name}',
+                        f'So sánh giá trước khi mua'
+                    ])
+                
                 suggestions.append({
                     'category': category_name,
                     'current_spending': category_total,
                     'percentage': round(percentage, 2),
-                    'suggestion': f'Cân nhắc giảm chi tiêu cho {category_name}',
-                    'potential_savings': round(category_total * 0.1, 2),  # Có thể tiết kiệm 10%
+                    'count': category_count,
+                    'avg_amount': round(avg_amount, 2),
+                    'priority_score': priority_score,
+                    'reasons': reasons if reasons else [f'Chiếm {percentage:.1f}% tổng chi tiêu'],
+                    'suggestion': f'Có thể tiết kiệm {potential_savings:,.0f}₫/tháng cho {category_name}',
+                    'actionable_tips': tips[:3],  # Top 3 tips - đảm bảo luôn có
+                    'potential_savings': round(potential_savings, 2),
                 })
+        
+        # Sắp xếp theo priority score
+        suggestions.sort(key=lambda x: x['priority_score'], reverse=True)
         
         # Tính tổng có thể tiết kiệm
         total_potential_savings = sum(s['potential_savings'] for s in suggestions)
+        
+        # Tính tỷ lệ tiết kiệm so với thu nhập
+        savings_rate = (total_potential_savings / float(total_income) * 100) if total_income > 0 else 0
+        
+        # Gợi ý tổng quan
+        overall_recommendation = []
+        if total_expense > float(total_income) * 0.8:
+            overall_recommendation.append('⚠️ Chi tiêu của bạn đang chiếm hơn 80% thu nhập. Nên cắt giảm ngay!')
+        elif total_expense > float(total_income) * 0.6:
+            overall_recommendation.append('💡 Chi tiêu đang ở mức cao. Có thể cải thiện để tăng tiết kiệm.')
+        
+        if savings_rate > 10:
+            overall_recommendation.append(f'✅ Nếu thực hiện các gợi ý, bạn có thể tiết kiệm thêm {savings_rate:.1f}% thu nhập mỗi tháng!')
+        
+        if not suggestions:
+            overall_recommendation.append('👍 Chi tiêu của bạn đang hợp lý! Hãy tiếp tục duy trì.')
         
         return {
             'suggestions': suggestions,
             'total_potential_savings': round(total_potential_savings, 2),
             'monthly_expense': float(total_expense),
+            'monthly_income': float(total_income),
+            'savings_rate': round(savings_rate, 2),
+            'overall_recommendation': overall_recommendation,
         }
     
     @staticmethod

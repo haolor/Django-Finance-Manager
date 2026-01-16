@@ -61,12 +61,42 @@ function Chatbot() {
     setLoading(true)
 
     try {
-      const response = await api.post('/transactions/nlp_query/', { text: query })
-      setMessages((prev) => [
-        ...prev,
-        { type: 'bot', text: response.data.result },
-      ])
+      // Kiểm tra nếu là câu hỏi về gợi ý tiết kiệm, dự đoán, bất thường, số dư -> dùng chatbot endpoint
+      const queryLower = query.toLowerCase()
+      const isSavingsQuery = queryLower.includes('tiết kiệm') || 
+                            queryLower.includes('gợi ý') || 
+                            queryLower.includes('cắt giảm') ||
+                            queryLower.includes('savings')
+      const isPredictionQuery = queryLower.includes('dự đoán') || 
+                               queryLower.includes('tháng sau') ||
+                               queryLower.includes('predict')
+      const isAnomalyQuery = queryLower.includes('bất thường') || 
+                            queryLower.includes('anomaly') ||
+                            queryLower.includes('lạ')
+      const isBalanceQuery = queryLower.includes('số dư') || 
+                           queryLower.includes('còn lại') ||
+                           queryLower.includes('balance')
+      const isIncomeQuery = queryLower.includes('thu nhập') || 
+                           queryLower.includes('tổng thu')
+      
+      // Các câu hỏi về chi tiêu, thu nhập, số dư, dự đoán, bất thường, tiết kiệm -> dùng chatbot
+      if (isSavingsQuery || isPredictionQuery || isAnomalyQuery || isBalanceQuery || isIncomeQuery) {
+        // Dùng chatbot endpoint cho các câu hỏi này
+        const response = await api.post('/chatbot/', { message: query })
+        setMessages((prev) => [
+          ...prev,
+          { type: 'bot', text: response.data.response },
+        ])
+      } else {
+        // Dùng nlp_query endpoint cho các truy vấn về transactions (chi tiêu cụ thể)
+        const response = await api.post('/transactions/nlp_query/', { text: query })
+        setMessages((prev) => [
+          ...prev,
+          { type: 'bot', text: response.data.result },
+        ])
+      }
     } catch (error) {
+      console.error('Error handling query:', error)
       setMessages((prev) => [
         ...prev,
         {
@@ -85,7 +115,7 @@ function Chatbot() {
     'Số dư hiện tại của tôi?',
     'Dự đoán chi tiêu tháng sau',
     'Có giao dịch bất thường nào không?',
-    'Gợi ý tiết kiệm cho tôi',
+    'Gợi ý kế hoạch tiết kiệm hoặc cắt giảm chi tiêu',
   ]
 
   return (

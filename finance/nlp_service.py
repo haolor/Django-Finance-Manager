@@ -159,14 +159,30 @@ class NLPService:
                 break
         
         # Tìm khoảng thời gian
-        if 'tháng' in text:
+        if 'tháng này' in text or 'tháng hiện tại' in text:
+            # Tháng hiện tại
+            today = datetime.now().date()
+            month_start = datetime(today.year, today.month, 1).date()
+            if today.month == 12:
+                month_end = datetime(today.year + 1, 1, 1).date() - timedelta(days=1)
+            else:
+                month_end = datetime(today.year, today.month + 1, 1).date() - timedelta(days=1)
+            result['time_period'] = {
+                'start': month_start,
+                'end': month_end,
+            }
+        elif 'tháng' in text:
             month_match = re.search(r'tháng\s*(\d+)', text)
             if month_match:
                 month = int(month_match.group(1))
                 current_year = datetime.now().year
+                if month == 12:
+                    month_end = datetime(current_year + 1, 1, 1).date() - timedelta(days=1)
+                else:
+                    month_end = datetime(current_year, month + 1, 1).date() - timedelta(days=1)
                 result['time_period'] = {
                     'start': datetime(current_year, month, 1).date(),
-                    'end': datetime(current_year, month, 28).date(),  # Approximate
+                    'end': month_end,
                 }
         
         if 'tuần' in text or 'week' in text:

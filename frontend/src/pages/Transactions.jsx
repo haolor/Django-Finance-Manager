@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import api from '../services/api'
 import { format } from 'date-fns'
-import { PlusIcon, PencilIcon, TrashIcon, MicrophoneIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, PencilIcon, TrashIcon, MicrophoneIcon, ChevronLeftIcon, ChevronRightIcon, PhotoIcon } from '@heroicons/react/24/outline'
 
 function Transactions() {
   const [transactions, setTransactions] = useState([])
@@ -15,6 +15,13 @@ function Transactions() {
   const [nlpError, setNlpError] = useState('')
   const [nlpLoading, setNlpLoading] = useState(false)
   const recognitionRef = useRef(null)
+  // OCR state
+  const [showOcrModal, setShowOcrModal] = useState(false)
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrResult, setOcrResult] = useState(null)
+  const [ocrError, setOcrError] = useState('')
   // Pagination state
   const [pagination, setPagination] = useState({
     count: 0,
@@ -236,6 +243,83 @@ function Transactions() {
     setShowModal(true)
   }
 
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      // Kiểm tra định dạng
+      if (!file.type.startsWith('image/')) {
+        setOcrError('Vui lòng chọn file ảnh (JPG, PNG, WebP)')
+        return
+      }
+      
+      // Kiểm tra kích thước (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setOcrError('Kích thước ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 10MB')
+        return
+      }
+      
+      setSelectedImage(file)
+      setOcrError('')
+      setOcrResult(null)
+      
+      // Tạo preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleOcrSubmit = async () => {
+    if (!selectedImage) {
+      setOcrError('Vui lòng chọn ảnh hóa đơn')
+      return
+    }
+    
+    setOcrLoading(true)
+    setOcrError('')
+    setOcrResult(null)
+    
+    try {
+      const formData = new FormData()
+      formData.append('image', selectedImage)
+      
+      const response = await api.post('/transactions/ocr_receipt/', formData)
+      
+      setOcrResult(response.data)
+      // Tự động đóng modal và reload data
+      setTimeout(() => {
+        setShowOcrModal(false)
+        setSelectedImage(null)
+        setImagePreview(null)
+        setOcrResult(null)
+        fetchData(1)
+        alert('Đã thêm giao dịch từ hóa đơn thành công!')
+      }, 2000)
+      
+    } catch (error) {
+      console.error('OCR error:', error)
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.detail ||
+                          'Không thể xử lý ảnh. Vui lòng thử lại với ảnh rõ hơn.'
+      setOcrError(errorMessage)
+      if (error.response?.data?.raw_text) {
+        setOcrResult({ raw_text: error.response.data.raw_text })
+      }
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  const handleOcrCancel = () => {
+    setShowOcrModal(false)
+    setSelectedImage(null)
+    setImagePreview(null)
+    setOcrResult(null)
+    setOcrError('')
+  }
+
   if (loading) {
     return <div className="text-center py-12">Đang tải...</div>
   }
@@ -245,6 +329,19 @@ function Transactions() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Quản lý Giao dịch</h1>
         <div className="space-x-4">
+          <button
+            onClick={() => {
+              setShowOcrModal(true)
+              setSelectedImage(null)
+              setImagePreview(null)
+              setOcrResult(null)
+              setOcrError('')
+            }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
+          >
+            <PhotoIcon className="w-5 h-5 mr-2" />
+            Quét hóa đơn
+          </button>
           <button
             onClick={() => {
               setShowNlpModal(true)
@@ -344,6 +441,94 @@ function Transactions() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* OCR Modal */}
+      {showOcrModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Quét hóa đơn từ ảnh</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Upload ảnh hóa đơn để tự động trích xuất thông tin giao dịch
+            </p>
+            
+            {ocrError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+                {ocrError}
+              </div>
+            )}
+            
+            {ocrResult && ocrResult.transaction && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-400 rounded">
+                <p className="text-green-800 font-medium mb-2">✅ Đã trích xuất thành công!</p>
+                <div className="text-sm text-green-700 space-y-1">
+                  <p>Số tiền: {ocrResult.extracted_info?.amount?.toLocaleString('vi-VN')}₫</p>
+                  {ocrResult.extracted_info?.category && <p>Danh mục: {ocrResult.extracted_info.category}</p>}
+                  {ocrResult.extracted_info?.description && <p>Mô tả: {ocrResult.extracted_info.description}</p>}
+                  {ocrResult.extracted_info?.merchant_name && <p>Cửa hàng: {ocrResult.extracted_info.merchant_name}</p>}
+                </div>
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              {/* Image Preview */}
+              {imagePreview && (
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                  <img 
+                    src={imagePreview} 
+                    alt="Preview" 
+                    className="max-w-full h-auto max-h-64 mx-auto rounded"
+                  />
+                </div>
+              )}
+              
+              {/* File Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Chọn ảnh hóa đơn
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  disabled={ocrLoading}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Hỗ trợ: JPG, PNG, WebP (tối đa 10MB)
+                </p>
+              </div>
+              
+              {/* OCR Text Preview */}
+              {ocrResult && ocrResult.raw_text && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Text đã đọc được:</p>
+                  <div className="p-3 bg-gray-50 rounded border border-gray-200 max-h-32 overflow-y-auto">
+                    <p className="text-xs text-gray-600 whitespace-pre-wrap">{ocrResult.raw_text}</p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={handleOcrCancel}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={ocrLoading}
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleOcrSubmit}
+                  disabled={ocrLoading || !selectedImage}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {ocrLoading ? 'Đang xử lý...' : 'Quét và thêm giao dịch'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
