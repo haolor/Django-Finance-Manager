@@ -38,7 +38,37 @@ function Register() {
       await register(formData)
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.error || 'Đăng ký thất bại. Vui lòng thử lại.')
+      console.error('Registration error:', err.response?.data)
+      
+      // Xử lý lỗi từ backend
+      if (err.response?.data) {
+        const errors = err.response.data
+        let errorMessage = ''
+
+        // Lỗi validation từng field
+        if (errors.username) {
+          errorMessage += `Username: ${Array.isArray(errors.username) ? errors.username.join(', ') : errors.username}\n`
+        }
+        if (errors.password) {
+          errorMessage += `Password: ${Array.isArray(errors.password) ? errors.password.join(', ') : errors.password}\n`
+        }
+        if (errors.password_confirm) {
+          errorMessage += `Xác nhận mật khẩu: ${Array.isArray(errors.password_confirm) ? errors.password_confirm.join(', ') : errors.password_confirm}\n`
+        }
+        if (errors.email) {
+          errorMessage += `Email: ${Array.isArray(errors.email) ? errors.email.join(', ') : errors.email}\n`
+        }
+        if (errors.non_field_errors) {
+          errorMessage += Array.isArray(errors.non_field_errors) ? errors.non_field_errors.join('\n') : errors.non_field_errors
+        }
+        if (errors.error) {
+          errorMessage += errors.error
+        }
+
+        setError(errorMessage.trim() || 'Đăng ký thất bại. Vui lòng thử lại.')
+      } else {
+        setError('Không thể kết nối đến server. Vui lòng kiểm tra lại.')
+      }
     } finally {
       setLoading(false)
     }
@@ -52,7 +82,7 @@ function Register() {
         </h2>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded whitespace-pre-line">
             {error}
           </div>
         )}

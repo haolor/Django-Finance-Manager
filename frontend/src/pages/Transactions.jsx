@@ -326,9 +326,9 @@ function Transactions() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Quản lý Giao dịch</h1>
-        <div className="space-x-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 md:mb-8 gap-4 pr-20 md:pr-16">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">Quản lý Giao dịch</h1>
+        <div className="flex flex-wrap gap-2 sm:gap-4 w-full sm:w-auto">
           <button
             onClick={() => {
               setShowOcrModal(true)
@@ -373,9 +373,9 @@ function Transactions() {
       {/* NLP Modal */}
       {showNlpModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Nhập liệu bằng ngôn ngữ tự nhiên</h2>
-            <p className="text-sm text-gray-600 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Nhập liệu bằng ngôn ngữ tự nhiên</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Ví dụ: "Hôm nay chi 50k ăn sáng", "Chi 100000 mua quần áo", "Nhận lương 10 triệu"
             </p>
             
@@ -619,54 +619,109 @@ function Transactions() {
       )}
 
       {/* Transactions List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        {/* Mobile Card View */}
+        <div className="md:hidden">
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+              Chưa có giao dịch nào
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {transactions.map((transaction) => (
+                <div key={transaction.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center flex-1 min-w-0">
+                      <span className="text-2xl mr-2 flex-shrink-0">{transaction.category_icon || '💰'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {transaction.category_name || 'Khác'}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {format(new Date(transaction.transaction_date), 'dd/MM/yyyy')}
+                        </p>
+                      </div>
+                    </div>
+                    <p className={`text-sm font-bold ml-2 flex-shrink-0 ${
+                      transaction.category_type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {transaction.category_type === 'income' ? '+' : '-'}
+                      {parseFloat(transaction.amount).toLocaleString('vi-VN')} ₫
+                    </p>
+                  </div>
+                  {transaction.description && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
+                      {transaction.description}
+                    </p>
+                  )}
+                  <div className="flex justify-end space-x-2 mt-2">
+                    <button
+                      onClick={() => handleEdit(transaction)}
+                      className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                    >
+                      <PencilIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(transaction.id)}
+                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Ngày
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Danh mục
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Mô tả
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Số tiền
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Thao tác
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     Chưa có giao dịch nào
                   </td>
                 </tr>
               ) : (
                 transactions.map((transaction) => (
-                  <tr key={transaction.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <tr key={transaction.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                       {format(new Date(transaction.transaction_date), 'dd/MM/yyyy')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <span className="text-2xl mr-2">{transaction.category_icon || '💰'}</span>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-xl md:text-2xl mr-2">{transaction.category_icon || '💰'}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {transaction.category_name || 'Khác'}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
+                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                       {transaction.description || '-'}
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
-                      transaction.category_type === 'income' ? 'text-green-600' : 'text-red-600'
+                      transaction.category_type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                     }`}>
                       {transaction.category_type === 'income' ? '+' : '-'}
                       {parseFloat(transaction.amount).toLocaleString('vi-VN')} ₫
@@ -675,13 +730,13 @@ function Transactions() {
                       <div className="flex justify-end space-x-2">
                         <button
                           onClick={() => handleEdit(transaction)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
                         >
                           <PencilIcon className="w-5 h-5" />
                         </button>
                         <button
                           onClick={() => handleDelete(transaction.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
                         >
                           <TrashIcon className="w-5 h-5" />
                         </button>

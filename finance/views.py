@@ -4,20 +4,23 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
+from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum, Q, Count
 from django.utils import timezone
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from .models import Category, Transaction, Budget, SpendingPattern
+from .models import Category, Transaction, Budget, SpendingPattern, UserPreferences, Notification
 from .serializers import (
     UserSerializer, UserRegistrationSerializer,
     CategorySerializer, TransactionSerializer,
-    BudgetSerializer, SpendingPatternSerializer
+    BudgetSerializer, SpendingPatternSerializer,
+    UserPreferencesSerializer, NotificationSerializer
 )
 from .nlp_service import NLPService
 from .ai_service import AIService
 from .ocr_service import OCRService
+from .notification_service import check_large_transaction, check_budget_exceeded, create_anomaly_notification
 
 
 @api_view(['GET'])
@@ -47,6 +50,7 @@ def api_root(request):
     })
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
@@ -62,6 +66,7 @@ def register(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
@@ -89,6 +94,156 @@ def login(request):
 def user_profile(request):
     """Lấy thông tin người dùng"""
     return Response(UserSerializer(request.user).data)
+
+
+@api_view(['GET', 'PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def user_preferences(request):
+    """Lấy hoặc cập nhật preferences của user"""
+    try:
+        preferences, created = UserPreferences.objects.get_or_create(user=request.user)
+        
+        if request.method == 'GET':
+            serializer = UserPreferencesSerializer(preferences)
+            return Response(serializer.data)
+        
+        elif request.method in ['PUT', 'PATCH']:
+            # Đảm bảo report_categories và dashboard_widgets là list nếu không có
+            data = request.data.copy()
+            if 'report_categories' not in data or data.get('report_categories') is None:
+                data['report_categories'] = []
+            if 'dashboard_widgets' not in data or data.get('dashboard_widgets') is None:
+                data['dashboard_widgets'] = []
+            
+            serializer = UserPreferencesSerializer(
+                preferences,
+                data=data,
+                partial=request.method == 'PATCH'
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(
+                {'error': 'Validation failed', 'details': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_custom_report(request):
+    """Tạo báo cáo tùy chỉnh theo preferences"""
+    from django.db.models import Sum, Count
+    from collections import defaultdict
+    
+    preferences, _ = UserPreferences.objects.get_or_create(user=request.user)
+    
+    # Lấy tham số từ request hoặc dùng defaults từ preferences
+    period = request.data.get('period', preferences.default_report_period)
+    start_date = request.data.get('start_date')
+    end_date = request.data.get('end_date')
+    categories = request.data.get('categories', preferences.report_categories)
+    
+    # Tính toán date range
+    today = datetime.now().date()
+    if period == 'week':
+        start = today - timedelta(days=7)
+        end = today
+    elif period == 'month':
+        start = datetime(today.year, today.month, 1).date()
+        if today.month == 12:
+            end = datetime(today.year + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            end = datetime(today.year, today.month + 1, 1).date() - timedelta(days=1)
+    elif period == 'quarter':
+        quarter = (today.month - 1) // 3 + 1
+        start = datetime(today.year, (quarter - 1) * 3 + 1, 1).date()
+        if quarter == 4:
+            end = datetime(today.year + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            end = datetime(today.year, quarter * 3 + 1, 1).date() - timedelta(days=1)
+    elif period == 'year':
+        start = datetime(today.year, 1, 1).date()
+        end = datetime(today.year, 12, 31).date()
+    else:
+        start = start_date or today - timedelta(days=30)
+        end = end_date or today
+    
+    # Query transactions
+    queryset = Transaction.objects.filter(
+        user=request.user,
+        transaction_date__gte=start,
+        transaction_date__lte=end
+    )
+    
+    if categories:
+        queryset = queryset.filter(category_id__in=categories)
+    
+    # Tính toán thống kê
+    total_income = queryset.filter(category__type='income').aggregate(
+        total=Sum('amount')
+    )['total'] or Decimal('0')
+    
+    total_expense = queryset.filter(category__type='expense').aggregate(
+        total=Sum('amount')
+    )['total'] or Decimal('0')
+    
+    balance = total_income - total_expense
+    
+    # Thống kê theo category
+    category_stats = queryset.values('category__name', 'category__type').annotate(
+        total=Sum('amount'),
+        count=Count('id')
+    ).order_by('-total')
+    
+    # Thống kê theo ngày
+    daily_stats = queryset.values('transaction_date').annotate(
+        income=Sum('amount', filter=Q(category__type='income')),
+        expense=Sum('amount', filter=Q(category__type='expense'))
+    ).order_by('transaction_date')
+    
+    report = {
+        'period': {
+            'type': period,
+            'start': start.isoformat(),
+            'end': end.isoformat(),
+        },
+        'summary': {
+            'total_income': float(total_income),
+            'total_expense': float(total_expense),
+            'balance': float(balance),
+            'transaction_count': queryset.count(),
+        },
+        'category_breakdown': [
+            {
+                'category': item['category__name'] or 'Khác',
+                'type': item['category__type'],
+                'total': float(item['total']),
+                'count': item['count'],
+            }
+            for item in category_stats
+        ],
+        'daily_stats': [
+            {
+                'date': item['transaction_date'].isoformat(),
+                'income': float(item['income'] or 0),
+                'expense': float(item['expense'] or 0),
+            }
+            for item in daily_stats
+        ],
+        'preferences': {
+            'include_charts': preferences.report_include_charts,
+            'include_tables': preferences.report_include_tables,
+            'chart_type': preferences.dashboard_chart_type,
+        }
+    }
+    
+    return Response(report)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -131,7 +286,38 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        transaction = serializer.save(user=self.request.user)
+        
+        # Kiểm tra và tạo notifications
+        check_large_transaction(transaction)
+        if transaction.category:
+            check_budget_exceeded(self.request.user, transaction.category)
+        
+        # Kiểm tra anomaly và tạo notification
+        try:
+            # Phát hiện anomalies
+            anomalies = AIService.detect_anomalies(self.request.user, days=30)
+            # Kiểm tra xem transaction vừa tạo có phải là anomaly không
+            for anomaly in anomalies:
+                if anomaly['id'] == transaction.id:
+                    # Tạo notification cho anomaly này
+                    anomaly_data = {
+                        'transaction': transaction,
+                        'amount': transaction.amount,
+                        'category': transaction.category.name if transaction.category else 'Khác',
+                    }
+                    create_anomaly_notification(self.request.user, anomaly_data)
+                    break
+        except Exception as e:
+            # Không block nếu anomaly detection thất bại
+            print(f"Error detecting anomaly: {e}")
+        
+        # Cập nhật spending patterns
+        try:
+            AIService.update_spending_patterns(self.request.user)
+        except Exception:
+            # Không block nếu update pattern thất bại
+            pass
     
     @action(detail=False, methods=['post'])
     def nlp_input(self, request):
@@ -175,6 +361,30 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 transaction_date=nlp_result['date'],
                 original_nlp_input=text,
             )
+            
+            # Kiểm tra và tạo notifications
+            check_large_transaction(transaction)
+            if transaction.category:
+                check_budget_exceeded(request.user, transaction.category)
+            
+            # Kiểm tra anomaly và tạo notification
+            try:
+                # Phát hiện anomalies
+                anomalies = AIService.detect_anomalies(request.user, days=30)
+                # Kiểm tra xem transaction vừa tạo có phải là anomaly không
+                for anomaly in anomalies:
+                    if anomaly['id'] == transaction.id:
+                        # Tạo notification cho anomaly này
+                        anomaly_data = {
+                            'transaction': transaction,
+                            'amount': transaction.amount,
+                            'category': transaction.category.name if transaction.category else 'Khác',
+                        }
+                        create_anomaly_notification(request.user, anomaly_data)
+                        break
+            except Exception as e:
+                # Không block nếu anomaly detection thất bại
+                print(f"Error detecting anomaly: {e}")
             
             # Cập nhật spending patterns
             try:
@@ -336,6 +546,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 original_nlp_input=ocr_result.get('raw_text', '')[:500],  # Lưu text OCR
             )
             
+            # Kiểm tra và tạo notifications
+            check_large_transaction(transaction)
+            if transaction.category:
+                check_budget_exceeded(request.user, transaction.category)
+            
             # Cập nhật spending patterns
             try:
                 AIService.update_spending_patterns(request.user)
@@ -360,6 +575,141 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 {'error': f'Lỗi xử lý OCR: {str(e)}. Vui lòng thử lại.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=False, methods=['get'])
+    def sync(self, request):
+        """
+        Đồng bộ dữ liệu cho mobile - lấy các giao dịch đã thay đổi từ lần sync cuối
+        Query params:
+        - last_sync: ISO datetime string (ví dụ: 2024-01-15T10:30:00Z)
+        - limit: số lượng tối đa (mặc định 100)
+        """
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+        
+        last_sync_str = request.query_params.get('last_sync', None)
+        limit = int(request.query_params.get('limit', 100))
+        
+        queryset = self.get_queryset()
+        
+        # Nếu có last_sync, chỉ lấy các giao dịch đã thay đổi sau thời điểm đó
+        if last_sync_str:
+            try:
+                last_sync = parse_datetime(last_sync_str)
+                if last_sync:
+                    # Chuyển sang timezone aware nếu cần
+                    if timezone.is_naive(last_sync):
+                        last_sync = timezone.make_aware(last_sync)
+                    queryset = queryset.filter(
+                        Q(updated_at__gt=last_sync) | Q(created_at__gt=last_sync)
+                    )
+            except (ValueError, TypeError):
+                pass
+        
+        # Sắp xếp và giới hạn
+        queryset = queryset.order_by('-updated_at', '-created_at')[:limit]
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # Trả về thêm metadata
+        return Response({
+            'transactions': serializer.data,
+            'count': len(serializer.data),
+            'server_time': timezone.now().isoformat(),
+            'has_more': len(serializer.data) == limit,
+        })
+    
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        """
+        Đồng bộ bulk cho mobile - gửi nhiều transactions cùng lúc
+        Body: {
+            'transactions': [
+                {'id': 1, 'amount': 100000, ...},  // Update nếu có id
+                {'amount': 50000, ...},  // Create nếu không có id
+            ],
+            'deleted_ids': [2, 3]  // IDs đã xóa trên mobile
+        }
+        """
+        transactions_data = request.data.get('transactions', [])
+        deleted_ids = request.data.get('deleted_ids', [])
+        
+        results = {
+            'created': [],
+            'updated': [],
+            'deleted': [],
+            'errors': []
+        }
+        
+        # Xử lý xóa
+        if deleted_ids:
+            deleted_qs = Transaction.objects.filter(
+                user=request.user,
+                id__in=deleted_ids
+            )
+            deleted_count = deleted_qs.count()
+            deleted_qs.delete()
+            results['deleted'] = deleted_ids
+            results['deleted_count'] = deleted_count
+        
+        # Xử lý create/update
+        for idx, trans_data in enumerate(transactions_data):
+            try:
+                trans_id = trans_data.get('id')
+                
+                if trans_id:
+                    # Update existing
+                    try:
+                        transaction = Transaction.objects.get(id=trans_id, user=request.user)
+                        serializer = self.get_serializer(transaction, data=trans_data, partial=True)
+                        if serializer.is_valid():
+                            serializer.save()
+                            results['updated'].append(serializer.data)
+                        else:
+                            results['errors'].append({
+                                'index': idx,
+                                'id': trans_id,
+                                'error': serializer.errors
+                            })
+                    except Transaction.DoesNotExist:
+                        results['errors'].append({
+                            'index': idx,
+                            'id': trans_id,
+                            'error': 'Transaction not found'
+                        })
+                else:
+                    # Create new
+                    serializer = self.get_serializer(data=trans_data)
+                    if serializer.is_valid():
+                        transaction = serializer.save(user=request.user)
+                        results['created'].append(serializer.data)
+                    else:
+                        results['errors'].append({
+                            'index': idx,
+                            'error': serializer.errors
+                        })
+            except Exception as e:
+                results['errors'].append({
+                    'index': idx,
+                    'error': str(e)
+                })
+        
+        # Cập nhật spending patterns sau khi sync
+        try:
+            AIService.update_spending_patterns(request.user)
+        except Exception:
+            pass
+        
+        return Response({
+            'success': True,
+            'results': results,
+            'summary': {
+                'created_count': len(results['created']),
+                'updated_count': len(results['updated']),
+                'deleted_count': results.get('deleted_count', 0),
+                'error_count': len(results['errors'])
+            }
+        }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['post'])
     def nlp_query(self, request):
@@ -452,6 +802,52 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return Response(result)
 
 
+class NotificationViewSet(viewsets.ModelViewSet):
+    """ViewSet cho Notification"""
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Chỉ trả về notifications của user hiện tại"""
+        return Notification.objects.filter(user=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        """Đánh dấu notification là đã đọc"""
+        notification = self.get_object()
+        if notification.user != request.user:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        notification.is_read = True
+        notification.read_at = timezone.now()
+        notification.save()
+        
+        return Response(NotificationSerializer(notification).data)
+    
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        """Đánh dấu tất cả notifications là đã đọc"""
+        count = Notification.objects.filter(
+            user=request.user,
+            is_read=False
+        ).update(
+            is_read=True,
+            read_at=timezone.now()
+        )
+        
+        return Response({'marked_read': count})
+    
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Lấy số lượng notifications chưa đọc"""
+        count = Notification.objects.filter(
+            user=request.user,
+            is_read=False
+        ).count()
+        
+        return Response({'unread_count': count})
+
+
 class BudgetViewSet(viewsets.ModelViewSet):
     """ViewSet cho Budget"""
     serializer_class = BudgetSerializer
@@ -462,6 +858,106 @@ class BudgetViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def sync(self, request):
+        """
+        Đồng bộ budgets cho mobile
+        Query params:
+        - last_sync: ISO datetime string
+        - limit: số lượng tối đa (mặc định 50)
+        """
+        from django.utils.dateparse import parse_datetime
+        
+        last_sync_str = request.query_params.get('last_sync', None)
+        limit = int(request.query_params.get('limit', 50))
+        
+        queryset = self.get_queryset()
+        
+        if last_sync_str:
+            try:
+                last_sync = parse_datetime(last_sync_str)
+                if last_sync:
+                    if timezone.is_naive(last_sync):
+                        last_sync = timezone.make_aware(last_sync)
+                    queryset = queryset.filter(created_at__gt=last_sync)
+            except (ValueError, TypeError):
+                pass
+        
+        queryset = queryset.order_by('-created_at')[:limit]
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'budgets': serializer.data,
+            'count': len(serializer.data),
+            'server_time': timezone.now().isoformat(),
+            'has_more': len(serializer.data) == limit,
+        })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sync_all(request):
+    """
+    Đồng bộ tất cả dữ liệu cho mobile - một endpoint duy nhất
+    Query params:
+    - last_sync: ISO datetime string (ví dụ: 2024-01-15T10:30:00Z)
+    - transactions_limit: số lượng transactions tối đa (mặc định 100)
+    - budgets_limit: số lượng budgets tối đa (mặc định 50)
+    """
+    from django.utils.dateparse import parse_datetime
+    
+    last_sync_str = request.query_params.get('last_sync', None)
+    transactions_limit = int(request.query_params.get('transactions_limit', 100))
+    budgets_limit = int(request.query_params.get('budgets_limit', 50))
+    
+    last_sync = None
+    if last_sync_str:
+        try:
+            last_sync = parse_datetime(last_sync_str)
+            if last_sync and timezone.is_naive(last_sync):
+                last_sync = timezone.make_aware(last_sync)
+        except (ValueError, TypeError):
+            pass
+    
+    # Sync Transactions
+    transactions_qs = Transaction.objects.filter(user=request.user)
+    if last_sync:
+        transactions_qs = transactions_qs.filter(
+            Q(updated_at__gt=last_sync) | Q(created_at__gt=last_sync)
+        )
+    transactions_qs = transactions_qs.order_by('-updated_at', '-created_at')[:transactions_limit]
+    transactions_serializer = TransactionSerializer(transactions_qs, many=True)
+    
+    # Sync Budgets
+    budgets_qs = Budget.objects.filter(user=request.user)
+    if last_sync:
+        budgets_qs = budgets_qs.filter(created_at__gt=last_sync)
+    budgets_qs = budgets_qs.order_by('-created_at')[:budgets_limit]
+    budgets_serializer = BudgetSerializer(budgets_qs, many=True)
+    
+    # Sync Categories (tất cả vì là shared)
+    categories_qs = Category.objects.all()
+    categories_serializer = CategorySerializer(categories_qs, many=True)
+    
+    return Response({
+        'transactions': {
+            'data': transactions_serializer.data,
+            'count': len(transactions_serializer.data),
+            'has_more': len(transactions_serializer.data) == transactions_limit,
+        },
+        'budgets': {
+            'data': budgets_serializer.data,
+            'count': len(budgets_serializer.data),
+            'has_more': len(budgets_serializer.data) == budgets_limit,
+        },
+        'categories': {
+            'data': categories_serializer.data,
+            'count': len(categories_serializer.data),
+        },
+        'server_time': timezone.now().isoformat(),
+        'last_sync': last_sync.isoformat() if last_sync else None,
+    })
 
 
 @api_view(['GET'])

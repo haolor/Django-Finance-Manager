@@ -25,7 +25,8 @@ SECRET_KEY = 'django-insecure-)7@yd!*8z-o!fzm03z+@cq^1qrykgt1+x4#w+@&ak#*!v3j-+#
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Cho phép truy cập từ localhost và mạng local (để mobile có thể kết nối)
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.100.137', '*']
 
 
 # Application definition
@@ -142,13 +143,21 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-# CORS settings
+# CORS settings - Cho phép mobile app truy cập
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "http://192.168.100.137:8000",  # IP của máy tính trong mạng local
 ]
+
+# Cho phép tất cả origins trong development (chỉ dùng khi phát triển)
+# Trong production, nên chỉ định rõ ràng các origins được phép
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -158,7 +167,13 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "http://192.168.100.137:8000",  # IP của máy tính trong mạng local
 ]
+
+# Disable CSRF for API endpoints (since we're using Token Authentication)
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Media files
 MEDIA_URL = '/media/'

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from .models import Category, Transaction, Budget, SpendingPattern
+from .models import Category, Transaction, Budget, SpendingPattern, UserPreferences, Notification
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -88,4 +88,52 @@ class SpendingPatternSerializer(serializers.ModelSerializer):
             'frequency', 'last_transaction_date', 'updated_at'
         ]
         read_only_fields = ['id', 'updated_at']
+
+
+class UserPreferencesSerializer(serializers.ModelSerializer):
+    report_categories = serializers.JSONField(required=False, allow_null=True)
+    dashboard_widgets = serializers.JSONField(required=False, allow_null=True)
+    
+    class Meta:
+        model = UserPreferences
+        fields = [
+            'theme', 'primary_color', 'sidebar_collapsed',
+            'default_report_period', 'report_categories', 'report_include_charts',
+            'report_include_tables', 'report_email_frequency',
+            'notify_budget_exceeded', 'notify_large_transaction', 'notify_anomaly_detected',
+            'large_transaction_threshold', 'dashboard_widgets', 'dashboard_chart_type',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+    
+    def validate_report_categories(self, value):
+        """Đảm bảo report_categories là list"""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+        return value
+    
+    def validate_dashboard_widgets(self, value):
+        """Đảm bảo dashboard_widgets là list"""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+        return value
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """Serializer cho Notification"""
+    related_transaction_id = serializers.IntegerField(source='related_transaction.id', read_only=True, allow_null=True)
+    related_budget_id = serializers.IntegerField(source='related_budget.id', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'type', 'title', 'message', 'is_read', 'email_sent',
+            'related_transaction_id', 'related_budget_id',
+            'created_at', 'read_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'read_at', 'email_sent']
 
