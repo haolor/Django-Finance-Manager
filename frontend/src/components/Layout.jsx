@@ -89,6 +89,48 @@ function Layout() {
     }
   }
 
+  // Map notification type to styling
+  const getNotificationStyle = (type) => {
+    const styles = {
+      budget_exceeded: {
+        emoji: '⚠️',
+        bgGradient: 'from-amber-400 to-orange-500',
+        cardBg: 'bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20',
+        borderColor: 'border-l-4 border-amber-500',
+        label: 'Vượt ngân sách'
+      },
+      large_transaction: {
+        emoji: '💳',
+        bgGradient: 'from-blue-400 to-cyan-500',
+        cardBg: 'bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20',
+        borderColor: 'border-l-4 border-blue-500',
+        label: 'Giao dịch lớn'
+      },
+      anomaly_detected: {
+        emoji: '🚨',
+        bgGradient: 'from-red-400 to-pink-500',
+        cardBg: 'bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-900/20 dark:to-pink-900/20',
+        borderColor: 'border-l-4 border-red-500',
+        label: 'Phát hiện bất thường'
+      },
+      report_ready: {
+        emoji: '📊',
+        bgGradient: 'from-green-400 to-emerald-500',
+        cardBg: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
+        borderColor: 'border-l-4 border-green-500',
+        label: 'Báo cáo'
+      },
+      system: {
+        emoji: 'ℹ️',
+        bgGradient: 'from-purple-400 to-indigo-500',
+        cardBg: 'bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20',
+        borderColor: 'border-l-4 border-purple-500',
+        label: 'Thông báo'
+      },
+    }
+    return styles[type] || styles.system
+  }
+
   const navigation = [
     { name: 'Dashboard', href: '/', icon: HomeIcon },
     { name: 'Giao dịch', href: '/transactions', icon: CurrencyDollarIcon },
@@ -201,12 +243,17 @@ function Layout() {
         <div className="fixed top-4 right-4 md:top-6 md:right-6 z-50" ref={notificationRef}>
           <button
             onClick={() => setShowNotifications(!showNotifications)}
-            className="relative p-2.5 rounded-full bg-white dark:bg-gray-700 shadow-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors border border-gray-200 dark:border-gray-600"
+            className={`relative p-3 rounded-full transition-all duration-300 backdrop-blur-sm ${
+              unreadCount > 0
+                ? 'bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/50 hover:shadow-red-500/70 hover:scale-110'
+                : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-md hover:shadow-lg border border-gray-200 dark:border-gray-600'
+            }`}
             aria-label="Notifications"
+            style={unreadCount > 0 ? { animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' } : {}}
           >
-            <BellIcon className="w-6 h-6 text-gray-700 dark:text-gray-200" />
+            <BellIcon className="w-6 h-6" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 block h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold border-2 border-white dark:border-gray-700">
+              <span className="absolute -top-2 -right-2 block h-6 w-6 rounded-full bg-gradient-to-br from-yellow-300 to-orange-500 text-white text-xs font-bold flex items-center justify-center border-2 border-white dark:border-gray-900 shadow-lg animate-bounce">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -214,63 +261,126 @@ function Layout() {
           
           {/* Notifications Dropdown */}
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto z-50">
-              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Thông báo</h3>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllAsRead}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    Đánh dấu tất cả đã đọc
-                  </button>
+            <div className="absolute right-0 mt-3 w-96 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50" style={{
+              animation: 'slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              transformOrigin: 'top right'
+            }}>
+              <style>{`
+                @keyframes slideDown {
+                  from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+                  to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.7; }
+                }
+              `}</style>
+              
+              {/* Header with gradient */}
+              <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 dark:from-blue-800 dark:via-blue-700 dark:to-cyan-700 px-6 py-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                      <BellIcon className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Thông báo</h3>
+                      <p className="text-xs text-blue-100">{notifications.length} thông báo</p>
+                    </div>
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllAsRead}
+                      className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-semibold transition-all duration-200 hover:scale-105"
+                    >
+                      Đánh dấu tất cả
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              <div className="overflow-y-auto max-h-[450px]">
+                {notifications.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <div className="mx-auto mb-4 p-4 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 rounded-full w-fit">
+                      <BellIcon className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-300 font-semibold">Không có thông báo</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Bạn sẽ nhận được thông báo khi có sự kiện quan trọng</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {notifications.map((notification) => {
+                      const style = getNotificationStyle(notification.type)
+                      return (
+                        <div
+                          key={notification.id}
+                          className={`px-5 py-4 transition-all duration-200 cursor-pointer group ${
+                            !notification.is_read 
+                              ? `${style.cardBg}` 
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                          }`}
+                          onClick={() => {
+                            if (!notification.is_read) {
+                              markAsRead(notification.id)
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-4">
+                            {/* Emoji icon in gradient circle */}
+                            <div className={`flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br ${style.bgGradient} flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow text-xl mt-0.5`}>
+                              {style.emoji}
+                            </div>
+                            
+                            {/* Content */}
+                            <div className="flex-1 min-w-0 py-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                                      {notification.title}
+                                    </p>
+                                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gradient-to-r ${style.bgGradient} text-white opacity-75">
+                                      {style.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1.5 leading-relaxed">
+                                    {notification.message}
+                                  </p>
+                                  <div className="flex items-center justify-between mt-2.5">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {format(new Date(notification.created_at), 'dd/MM/yyyy HH:mm')}
+                                    </p>
+                                    {!notification.is_read && (
+                                      <div className="text-xs font-semibold text-blue-600 dark:text-blue-400">Mới</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Unread indicator */}
+                            {!notification.is_read && (
+                              <div className="flex-shrink-0 mt-1">
+                                <div className="w-3 h-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-md animate-pulse"></div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
               
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {notifications.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                    Không có thông báo nào
-                  </div>
-                ) : (
-                  notifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
-                        !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                      }`}
-                      onClick={() => {
-                        if (!notification.is_read) {
-                          markAsRead(notification.id)
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${
-                            !notification.is_read 
-                              ? 'text-gray-900 dark:text-gray-100' 
-                              : 'text-gray-700 dark:text-gray-300'
-                          }`}>
-                            {notification.title}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {notification.message}
-                          </p>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                            {format(new Date(notification.created_at), 'dd/MM/yyyy HH:mm')}
-                          </p>
-                        </div>
-                        {!notification.is_read && (
-                          <div className="ml-2 flex-shrink-0">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              {/* Footer */}
+              {notifications.length > 0 && (
+                <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-600/50 border-t border-gray-200 dark:border-gray-700 text-center">
+                  <button className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">
+                    Xem tất cả thông báo →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
