@@ -4,6 +4,9 @@ from django.db.models import Sum, Q
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+from django.core.mail import send_mail
+from django.conf import settings
+
 from .models import Notification, Transaction, Budget, UserPreferences
 
 
@@ -19,11 +22,43 @@ def create_notification(user, notification_type, title, message, related_transac
         email_sent=False
     )
     
-    # TODO: Gửi email nếu send_email=True
-    # if send_email:
-    #     send_notification_email(notification)
+    # Gửi email nếu người dùng bật thông báo email
+    if send_email:
+        send_notification_email(notification)
     
     return notification
+
+
+def send_notification_email(notification: Notification) -> bool:
+    """Gửi email notification cho người dùng (nếu user có email)."""
+    try:
+        user = notification.user
+        if not getattr(user, "email", None):
+            return False
+
+        subject = f'[Finance Manager] {notification.title}'
+        # Plain text đơn giản để đảm bảo gửi được ngay (không phụ thuộc template HTML).
+        plain_message = (
+            f"{notification.title}\n\n"
+            f"{notification.message}\n\n"
+            f"Loại thông báo: {notification.get_type_display()}\n"
+            f"Thời gian: {notification.created_at.strftime('%d/%m/%Y %H:%M')}\n"
+        )
+
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
+        notification.email_sent = True
+        notification.save(update_fields=["email_sent"])
+        return True
+    except Exception as e:
+        print(f"Error sending notification email: {e}")
+        return False
 
 
 def check_large_transaction(transaction):

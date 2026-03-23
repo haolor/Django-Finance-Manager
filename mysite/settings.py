@@ -10,10 +10,40 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(env_path: Path) -> None:
+    """
+    Load key=value pairs from a local .env/.env.local file into process env.
+    (Development helper; avoids adding extra dependencies.)
+    """
+    try:
+        if not env_path.exists():
+            return
+        with env_path.open("r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ.setdefault(key, value)
+    except Exception:
+        # Don't block app boot due to env parsing errors.
+        return
+
+
+# Load local environment variables for development
+_load_env_file(BASE_DIR / ".env.local")
+_load_env_file(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -178,3 +208,17 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+
+# ----------------------------
+# Email configuration (SMTP)
+# ----------------------------
+# Read credentials from environment variables (prefer .env.local).
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes', 'on')
+
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Finance Manager <noreply@financemanager.com>')
