@@ -1,7 +1,7 @@
 """
 AI Service for trend analysis, predictions, and anomaly detection
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from decimal import Decimal
 from typing import Dict, List, Optional
 from django.db.models import Sum, Avg, Count, Q
@@ -13,12 +13,19 @@ class AIService:
     """Service để phân tích AI cho hệ thống tài chính"""
     
     @staticmethod
-    def analyze_spending_trends(user: User, days: int = 30) -> Dict:
+    def analyze_spending_trends(
+        user: User,
+        days: int = 30,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict:
         """
         Phân tích xu hướng chi tiêu
         """
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
+        if end_date is None:
+            end_date = datetime.now().date()
+        if start_date is None:
+            start_date = end_date - timedelta(days=days)
         
         transactions = Transaction.objects.filter(
             user=user,
@@ -77,13 +84,19 @@ class AIService:
         }
     
     @staticmethod
-    def predict_next_month_spending(user: User) -> Dict:
+    def predict_next_month_spending(
+        user: User,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict:
         """
         Dự đoán chi tiêu tháng tiếp theo
         """
-        # Lấy dữ liệu 3 tháng gần nhất
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=90)
+        if end_date is None:
+            end_date = datetime.now().date()
+        # Mặc định lấy dữ liệu 3 tháng gần nhất
+        if start_date is None:
+            start_date = end_date - timedelta(days=90)
         
         transactions = Transaction.objects.filter(
             user=user,
@@ -122,12 +135,19 @@ class AIService:
         }
     
     @staticmethod
-    def detect_anomalies(user: User, days: int = 30) -> List[Dict]:
+    def detect_anomalies(
+        user: User,
+        days: int = 30,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[Dict]:
         """
         Phát hiện bất thường trong chi tiêu
         """
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
+        if end_date is None:
+            end_date = datetime.now().date()
+        if start_date is None:
+            start_date = end_date - timedelta(days=days)
         
         transactions = Transaction.objects.filter(
             user=user,
@@ -165,13 +185,19 @@ class AIService:
         return sorted(anomalies, key=lambda x: x['amount'], reverse=True)
     
     @staticmethod
-    def suggest_savings_plan(user: User) -> Dict:
+    def suggest_savings_plan(
+        user: User,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict:
         """
         Gợi ý kế hoạch tiết kiệm chi tiết và cụ thể
         """
         # Phân tích chi tiêu theo danh mục (30 ngày gần nhất)
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.now().date()
+        if start_date is None:
+            start_date = end_date - timedelta(days=30)
         
         transactions = Transaction.objects.filter(
             user=user,

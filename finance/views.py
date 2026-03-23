@@ -407,25 +407,39 @@ class TransactionViewSet(viewsets.ModelViewSet):
         """Thống kê thu chi"""
         user = request.user
         
-        # Lấy khoảng thời gian
-        start_date = request.query_params.get('start_date', None)
-        end_date = request.query_params.get('end_date', None)
-        
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=30)).date()
-        else:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        
-        if not end_date:
+        period = request.query_params.get('period', None)  # e.g. 'all'
+        start_date_param = request.query_params.get('start_date', None)
+        end_date_param = request.query_params.get('end_date', None)
+
+        # Nếu muốn thống kê tất cả (all-time) thì không áp dụng filter theo ngày
+        if period == 'all':
+            # Vẫn trả về start/end để frontend hiển thị/diagnose (không dùng cho tính toán)
+            start_date = datetime(1970, 1, 1).date()
             end_date = datetime.now().date()
+            transactions = Transaction.objects.filter(user=user)
         else:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        
-        transactions = Transaction.objects.filter(
-            user=user,
-            transaction_date__gte=start_date,
-            transaction_date__lte=end_date
-        )
+            # Lấy khoảng thời gian
+            if not start_date_param:
+                start_date = (datetime.now() - timedelta(days=30)).date()
+            else:
+                try:
+                    start_date = datetime.strptime(start_date_param, '%Y-%m-%d').date()
+                except ValueError:
+                    start_date = (datetime.now() - timedelta(days=30)).date()
+
+            if not end_date_param:
+                end_date = datetime.now().date()
+            else:
+                try:
+                    end_date = datetime.strptime(end_date_param, '%Y-%m-%d').date()
+                except ValueError:
+                    end_date = datetime.now().date()
+
+            transactions = Transaction.objects.filter(
+                user=user,
+                transaction_date__gte=start_date,
+                transaction_date__lte=end_date
+            )
         
         # Tính tổng thu, chi
         total_income = transactions.filter(
@@ -472,6 +486,33 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 for item in daily_stats
             ],
         })
+
+    @action(detail=False, methods=['get'])
+    def expenses(self, request):
+        """
+        Lấy toàn bộ giao dịch 'chi tiêu' từ DB (lọc theo category.type='expense').
+        Mặc định không giới hạn theo ngày; có thể truyền start_date/end_date (YYYY-MM-DD).
+        """
+        queryset = self.get_queryset().select_related('category').filter(category__type='expense')
+
+        start_date = request.query_params.get('start_date', None)
+        end_date = request.query_params.get('end_date', None)
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(transaction_date__gte=start_date)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(transaction_date__lte=end_date)
+            except ValueError:
+                pass
+
+        queryset = queryset.order_by('-transaction_date', '-id')
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['post'])
     def ocr_receipt(self, request):
@@ -964,8 +1005,27 @@ def sync_all(request):
 @permission_classes([IsAuthenticated])
 def ai_trends(request):
     """Phân tích xu hướng chi tiêu"""
-    days = int(request.query_params.get('days', 30))
-    trends = AIService.analyze_spending_trends(request.user, days)
+    start_date = request.query_params.get('start_date', None)
+    end_date = request.query_params.get('end_date', None)
+    days = request.query_params.get('days', 30)
+
+    start = None
+    end = None
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError:
+            start = None
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            end = None
+
+    if start and end:
+        trends = AIService.analyze_spending_trends(request.user, start_date=start, end_date=end)
+    else:
+        trends = AIService.analyze_spending_trends(request.user, int(days))
     return Response(trends)
 
 
@@ -973,7 +1033,25 @@ def ai_trends(request):
 @permission_classes([IsAuthenticated])
 def ai_predictions(request):
     """Dự đoán chi tiêu tháng tiếp theo"""
-    predictions = AIService.predict_next_month_spending(request.user)
+    start_date = request.query_params.get('start_date', None)
+    end_date = request.query_params.get('end_date', None)
+    start = None
+    end = None
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError:
+            start = None
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            end = None
+
+    if start and end:
+        predictions = AIService.predict_next_month_spending(request.user, start_date=start, end_date=end)
+    else:
+        predictions = AIService.predict_next_month_spending(request.user)
     return Response(predictions)
 
 
@@ -981,8 +1059,27 @@ def ai_predictions(request):
 @permission_classes([IsAuthenticated])
 def ai_anomalies(request):
     """Phát hiện bất thường trong chi tiêu"""
-    days = int(request.query_params.get('days', 30))
-    anomalies = AIService.detect_anomalies(request.user, days)
+    start_date = request.query_params.get('start_date', None)
+    end_date = request.query_params.get('end_date', None)
+    days = request.query_params.get('days', 30)
+
+    start = None
+    end = None
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError:
+            start = None
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            end = None
+
+    if start and end:
+        anomalies = AIService.detect_anomalies(request.user, start_date=start, end_date=end)
+    else:
+        anomalies = AIService.detect_anomalies(request.user, int(days))
     return Response({'anomalies': anomalies})
 
 
@@ -990,7 +1087,25 @@ def ai_anomalies(request):
 @permission_classes([IsAuthenticated])
 def ai_savings_suggestions(request):
     """Gợi ý kế hoạch tiết kiệm"""
-    suggestions = AIService.suggest_savings_plan(request.user)
+    start_date = request.query_params.get('start_date', None)
+    end_date = request.query_params.get('end_date', None)
+    start = None
+    end = None
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError:
+            start = None
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            end = None
+
+    if start and end:
+        suggestions = AIService.suggest_savings_plan(request.user, start_date=start, end_date=end)
+    else:
+        suggestions = AIService.suggest_savings_plan(request.user)
     return Response(suggestions)
 
 

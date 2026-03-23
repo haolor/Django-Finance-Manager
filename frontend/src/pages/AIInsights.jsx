@@ -23,18 +23,35 @@ function AIInsights() {
   const [anomalies, setAnomalies] = useState([])
   const [savings, setSavings] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [startDate, setStartDate] = useState(
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  )
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+  const [filterError, setFilterError] = useState('')
 
   useEffect(() => {
     fetchAllInsights()
   }, [])
 
   const fetchAllInsights = async () => {
+    setFilterError('')
+
+    if (startDate && endDate && startDate > endDate) {
+      setFilterError('Ngày bắt đầu không được lớn hơn ngày kết thúc.')
+      return
+    }
+
     try {
+      const query = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+      })
+
       const [trendsRes, predictionsRes, anomaliesRes, savingsRes] = await Promise.all([
-        api.get('/ai/trends/'),
-        api.get('/ai/predictions/'),
-        api.get('/ai/anomalies/'),
-        api.get('/ai/savings-suggestions/'),
+        api.get(`/ai/trends/?${query.toString()}`),
+        api.get(`/ai/predictions/?${query.toString()}`),
+        api.get(`/ai/anomalies/?${query.toString()}`),
+        api.get(`/ai/savings-suggestions/?${query.toString()}`),
       ])
       setTrends(trendsRes.data)
       setPredictions(predictionsRes.data)
@@ -54,6 +71,47 @@ function AIInsights() {
   return (
     <div>
       <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4 md:mb-8">AI Insights</h1>
+      
+      {/* Filters */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 md:p-6 mb-4 md:mb-6">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mb-1">Từ ngày</p>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mb-1">Đến ngày</p>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {filterError && (
+              <div className="text-sm text-red-600 dark:text-red-400">
+                {filterError}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={fetchAllInsights}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            >
+              Lọc
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Predictions */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 md:p-6 mb-4 md:mb-6">

@@ -18,16 +18,14 @@ function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const endDate = format(new Date(), 'yyyy-MM-dd')
-      const startDate = format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
-
       const [statsRes, transactionsRes] = await Promise.all([
-        api.get(`/transactions/statistics/?start_date=${startDate}&end_date=${endDate}`),
-        api.get('/transactions/?limit=5'),
+        api.get('/transactions/statistics/?period=all'),
+        api.get('/transactions/expenses/'),
       ])
 
       setStats(statsRes.data)
-      setRecentTransactions(transactionsRes.data.results || transactionsRes.data)
+      const data = transactionsRes.data
+      setRecentTransactions(Array.isArray(data) ? data : (data?.results || []))
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -87,11 +85,11 @@ function Dashboard() {
       {/* Recent Transactions */}
       <div className="bg-white dark:bg-gray-700 rounded-lg shadow">
         <div className="p-4 md:p-6 border-b border-gray-200 dark:border-gray-600">
-          <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-gray-100">Giao dịch gần đây</h2>
+          <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-gray-100">Toàn bộ chi tiêu</h2>
         </div>
-        <div className="p-4 md:p-6">
+        <div className="p-4 md:p-6 max-h-[60vh] overflow-y-auto">
           {recentTransactions.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">Chưa có giao dịch nào</p>
+            <p className="text-gray-500 text-center py-8">Chưa có chi tiêu nào</p>
           ) : (
             <div className="space-y-3 md:space-y-4">
               {recentTransactions.map((transaction) => {
@@ -111,7 +109,7 @@ function Dashboard() {
                     <div className="flex items-center space-x-2 md:space-x-4 flex-1 min-w-0">
                       <div
                         className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center text-xl md:text-2xl flex-shrink-0"
-                        style={{ backgroundColor: transaction.category_color + '20' }}
+                        style={{ backgroundColor: (transaction.category_color || '#6B7280') + '20' }}
                       >
                         {transaction.category_icon || '💰'}
                       </div>
