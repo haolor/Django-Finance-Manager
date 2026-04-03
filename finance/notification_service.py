@@ -10,6 +10,7 @@ from django.conf import settings
 from .models import Notification, Transaction, Budget, UserPreferences
 
 
+
 def create_notification(user, notification_type, title, message, related_transaction=None, related_budget=None, send_email=False):
     """Tạo một notification mới"""
     notification = Notification.objects.create(
@@ -21,12 +22,13 @@ def create_notification(user, notification_type, title, message, related_transac
         related_budget=related_budget,
         email_sent=False
     )
-    
+
     # Gửi email nếu người dùng bật thông báo email
     if send_email:
         send_notification_email(notification)
     
     return notification
+
 
 
 def send_notification_email(notification: Notification) -> bool:
@@ -45,12 +47,55 @@ def send_notification_email(notification: Notification) -> bool:
             f"Thời gian: {notification.created_at.strftime('%d/%m/%Y %H:%M')}\n"
         )
 
+        type_colors = {
+        'large_transaction': ("#dc3545", "#f8d7da"),
+        'budget_exceeded': ("#ffc107", "#fff3cd"),
+        'anomaly_detected': ("#17a2b8", "#d1ecf1"),
+        }
+
+        color, bg = type_colors.get(notification.type, ("#4CAF50", "#f5f5f5"))
+        
+
+        html_message = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px; overflow: hidden;">
+            
+            <!-- Header -->
+            <div style="background: #4CAF50; color: white; padding: 15px; text-align: center;">
+                <h2>💰 Finance Manager</h2>
+            </div>
+
+            <!-- Body -->
+            <div style="padding: 20px;">
+                <h3 style="color: #333;">{notification.title}</h3>
+                
+                <p style="font-size: 16px; color: #555;">
+                    {notification.message}
+                </p>
+
+                <!-- Highlight box -->
+                <div style="background: {bg}; padding: 15px; border-left: 5px solid {color}; border-radius: 8px; margin-top: 15px;">
+                    <p style="margin: 0;"><strong>📌 Loại:</strong> {notification.get_type_display()}</p>
+                    <p style="margin: 0;"><strong>⏰ Thời gian:</strong> {notification.created_at.strftime('%d/%m/%Y %H:%M')}</p>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div style="background: #f5f5f5; padding: 10px; text-align: center; font-size: 12px; color: #888;">
+                Đây là email tự động, vui lòng không trả lời.
+            </div>
+
+        </div>
+        """
+
+
         send_mail(
             subject=subject,
             message=plain_message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
             fail_silently=False,
+            html_message=html_message
         )
 
         notification.email_sent = True

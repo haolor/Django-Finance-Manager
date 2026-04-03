@@ -113,7 +113,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'finance_db',
         'USER': 'postgres',
-        'PASSWORD': 'Haovip1!',
+        'PASSWORD': 'Kien04112004!',
         'HOST': '127.0.0.1',
         'PORT': '5432',
     }
@@ -219,6 +219,10 @@ EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes', 'on')
 
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'kien06112004@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'latt xemx sczh vemw')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Finance Manager <noreply@financemanager.com>')
+
+# Gemini (LLM)
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyA4cTNdIxx8nfq8zgvHkLwKq5PNDDiyF8w')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3-flash-preview')

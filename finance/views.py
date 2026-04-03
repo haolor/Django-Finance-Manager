@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum, Q, Count
 from django.utils import timezone
+from django.conf import settings
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ from .serializers import (
 )
 from .nlp_service import NLPService
 from .ai_service import AIService
+from .gemini_service import GeminiService
 from .ocr_service import OCRService
 from .notification_service import check_large_transaction, check_budget_exceeded, create_anomaly_notification
 
@@ -1048,10 +1050,21 @@ def ai_predictions(request):
         except ValueError:
             end = None
 
-    if start and end:
-        predictions = AIService.predict_next_month_spending(request.user, start_date=start, end_date=end)
-    else:
-        predictions = AIService.predict_next_month_spending(request.user)
+    try:
+        if start and end:
+            predictions = GeminiService.predict_next_month_spending_with_ai(
+                request.user, start_date=start, end_date=end
+            )
+        else:
+            predictions = GeminiService.predict_next_month_spending_with_ai(request.user)
+    except Exception as exc:
+        # Fallback để API không fail nếu Gemini có sự cố
+        if start and end:
+            predictions = AIService.predict_next_month_spending(request.user, start_date=start, end_date=end)
+        else:
+            predictions = AIService.predict_next_month_spending(request.user)
+        predictions['fallback_reason'] = str(exc)
+        predictions['provider'] = 'local-fallback'
     return Response(predictions)
 
 
@@ -1121,6 +1134,18 @@ def chatbot(request):
         )
     
     message_lower = message.lower()
+
+    try:
+        ai_response = GeminiService.get_chat_response(request.user, message)
+        return Response({
+            'message': message,
+            'response': ai_response,
+            'provider': 'gemini',
+            'model': getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash'),
+        })
+    except Exception as exc:
+        # Nếu Gemini lỗi thì fallback về rule-based hiện tại
+        fallback_error = str(exc)
     
     # Xử lý các loại câu hỏi khác nhau
     if any(keyword in message_lower for keyword in ['chi bao nhiêu', 'tổng chi', 'đã chi']):
@@ -1305,5 +1330,7 @@ def chatbot(request):
     return Response({
         'message': message,
         'response': response,
+        'provider': 'local-fallback',
+        'fallback_reason': fallback_error,
     })
 
