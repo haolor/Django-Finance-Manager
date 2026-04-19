@@ -1,0 +1,37 @@
+---
+description: Hệ quản lý tài chính cá nhân thông minh — Django Core + FastAPI AI/NLP; đọc .claude/rules trước khi chỉnh lớn
+globs:
+  - "**/*"
+---
+
+# Finance Microservices — Quy tắc Cursor
+
+Repo triển khai **quản lý tài chính cá nhân thông minh** tách **Core API (Django + DRF + PostgreSQL)** và **AI/NLP Service (FastAPI + Gemini)**. LLM **không** thay thế cơ sở dữ liệu: mọi ghi nhận giao dịch/ngân sách qua **Core**; AI chỉ **chat, dự đoán LLM, parse ngôn ngữ** và gọi Core bằng **HTTP + Token user**.
+
+## Đọc bắt buộc khi đổi kiến trúc hoặc API
+
+| File | Nội dung |
+|------|----------|
+| `finance-microservices/.claude/rules/system-design.md` | Ranh giới service, luồng |
+| `finance-microservices/.claude/rules/backend-conventions.md` | Django Core + FastAPI AI |
+| `finance-microservices/.claude/rules/frontend-conventions.md` | React/Vite, env, Token |
+| `finance-microservices/.claude/rules/api-conventions.md` | REST, header, `/v1` AI |
+| `finance-microservices/.claude/rules/security.md` | Secret, production |
+
+## Ranh giới thư mục
+
+- **Core**: `finance-microservices/services/core-api` — ORM, migrations, mọi `/api/` trừ gọi Gemini.
+- **AI**: `finance-microservices/services/ai-nlp-service` — chỉ gọi Core qua HTTP; `GEMINI_API_KEY` chỉ ở env AI service.
+- **Compose**: `finance-microservices/infra/docker-compose.yml`.
+
+## Quy tắc cứng
+
+1. Không thêm Gemini / SDK Generative AI vào Core.
+2. AI service không dùng Django ORM cho dữ liệu người dùng.
+3. Chat monolith cũ `POST /api/chatbot/` → client dùng AI `POST /v1/chat`.
+4. Không commit secret; không nhúng API key Gemini vào frontend (`VITE_*` không chứa khóa LLM).
+
+## Tài liệu ngắn
+
+- `finance-microservices/README.md` — chạy nhanh, mapping endpoint
+- `finance-microservices/AGENTS.md` — hướng dẫn agent

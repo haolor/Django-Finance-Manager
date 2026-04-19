@@ -1,5 +1,22 @@
 # Django Finance Manager
 
+## Chay theo kien truc microservices (backend) + React frontend
+
+Neu ban muon chay theo kieu tach service (Core API + AI/NLP service + React), xem huong dan day du tai:
+
+- `finance-microservices/README.md` (muc `5.1. Lenh chay chi tiet tren Windows`)
+
+Tom tat nhanh:
+
+1. Chay `services/core-api` tren cong `8000`
+2. Chay `services/ai-nlp-service` tren cong `8001`
+3. Chay `frontend` bang `npm run dev` tren cong `3000`
+
+Frontend da duoc cau hinh de goi:
+
+- Core API qua `/api/*`
+- AI service qua `/v1/*`
+
 He thong quan ly tai chinh ca nhan su dung Django REST API + React (Vite), ho tro:
 
 - Quan ly giao dich thu/chi theo danh muc

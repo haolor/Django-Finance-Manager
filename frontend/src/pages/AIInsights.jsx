@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import api from '../services/api'
+import api, { aiApi } from '../services/api'
 import {
   LineChart,
   Line,
@@ -49,7 +49,7 @@ function AIInsights() {
 
       const [trendsRes, predictionsRes, anomaliesRes, savingsRes] = await Promise.all([
         api.get(`/ai/trends/?${query.toString()}`),
-        api.get(`/ai/predictions/?${query.toString()}`),
+        aiApi.get(`/predictions?${query.toString()}`),
         api.get(`/ai/anomalies/?${query.toString()}`),
         api.get(`/ai/savings-suggestions/?${query.toString()}`),
       ])

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import api from '../services/api'
+import api, { aiApi } from '../services/api'
 import { PaperAirplaneIcon } from '@heroicons/react/24/outline'
 
 function Chatbot() {
@@ -35,7 +35,7 @@ function Chatbot() {
     setLoading(true)
 
     try {
-      const response = await api.post('/chatbot/', { message: userMessage })
+      const response = await aiApi.post('/chat', { message: userMessage })
       setMessages((prev) => [
         ...prev,
         { type: 'bot', text: response.data.response },
@@ -82,7 +82,7 @@ function Chatbot() {
       // Các câu hỏi về chi tiêu, thu nhập, số dư, dự đoán, bất thường, tiết kiệm -> dùng chatbot
       if (isSavingsQuery || isPredictionQuery || isAnomalyQuery || isBalanceQuery || isIncomeQuery) {
         // Dùng chatbot endpoint cho các câu hỏi này
-        const response = await api.post('/chatbot/', { message: query })
+        const response = await aiApi.post('/chat', { message: query })
         setMessages((prev) => [
           ...prev,
           { type: 'bot', text: response.data.response },

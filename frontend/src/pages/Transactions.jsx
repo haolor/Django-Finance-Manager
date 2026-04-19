@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import api from '../services/api'
+import api, { aiApi } from '../services/api'
 import { format } from 'date-fns'
 import { PlusIcon, PencilIcon, TrashIcon, MicrophoneIcon, ChevronLeftIcon, ChevronRightIcon, PhotoIcon } from '@heroicons/react/24/outline'
 
@@ -176,7 +176,7 @@ function Transactions() {
     setNlpError('')
     
     try {
-      const response = await api.post('/transactions/nlp_input/', { text: nlpInput })
+      const response = await aiApi.post('/parse-transaction', { text: nlpInput })
       setNlpInput('')
       setShowNlpModal(false)
       setNlpError('')
