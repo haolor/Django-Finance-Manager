@@ -191,7 +191,10 @@ def generate_custom_report(request):
         total=Sum('amount')
     )['total'] or Decimal('0')
     
-    total_expense = queryset.filter(category__type='expense').aggregate(
+    # Treat uncategorized transactions as expense to keep balance consistent.
+    total_expense = queryset.filter(
+        Q(category__type='expense') | Q(category__isnull=True)
+    ).aggregate(
         total=Sum('amount')
     )['total'] or Decimal('0')
     
@@ -206,7 +209,7 @@ def generate_custom_report(request):
     # Thống kê theo ngày
     daily_stats = queryset.values('transaction_date').annotate(
         income=Sum('amount', filter=Q(category__type='income')),
-        expense=Sum('amount', filter=Q(category__type='expense'))
+        expense=Sum('amount', filter=Q(category__type='expense') | Q(category__isnull=True))
     ).order_by('transaction_date')
     
     report = {
@@ -449,7 +452,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         
         total_expense = transactions.filter(
-            category__type='expense'
+            Q(category__type='expense') | Q(category__isnull=True)
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         
         balance = total_income - total_expense
@@ -465,7 +468,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         # Thống kê theo ngày
         daily_stats = transactions.values('transaction_date').annotate(
             income=Sum('amount', filter=Q(category__type='income')),
-            expense=Sum('amount', filter=Q(category__type='expense'))
+            expense=Sum('amount', filter=Q(category__type='expense') | Q(category__isnull=True))
         ).order_by('transaction_date')
         
         return Response({
@@ -495,7 +498,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         Lấy toàn bộ giao dịch 'chi tiêu' từ DB (lọc theo category.type='expense').
         Mặc định không giới hạn theo ngày; có thể truyền start_date/end_date (YYYY-MM-DD).
         """
-        queryset = self.get_queryset().select_related('category').filter(category__type='expense')
+        queryset = self.get_queryset().select_related('category').filter(
+            Q(category__type='expense') | Q(category__isnull=True)
+        )
 
         start_date = request.query_params.get('start_date', None)
         end_date = request.query_params.get('end_date', None)
@@ -570,14 +575,28 @@ class TransactionViewSet(viewsets.ModelViewSet):
             
             # Tìm hoặc tạo category
             category = None
+            transaction_type = transaction_info.get('type', 'expense') or 'expense'
             if transaction_info.get('category'):
                 try:
                     category = NLPService.get_or_create_category(
                         transaction_info['category'],
-                        transaction_info.get('type', 'expense')
+                        transaction_type
                     )
                 except Exception:
-                    pass
+                    category = None
+
+            # Fallback category to avoid uncategorized OCR transactions.
+            if category is None:
+                fallback_name = 'Chi tiêu khác' if transaction_type == 'expense' else 'Thu nhập khác'
+                category, _ = Category.objects.get_or_create(
+                    name=fallback_name,
+                    defaults={
+                        'type': transaction_type,
+                        'icon': '🧾',
+                        'color': '#6B7280',
+                        'description': 'Tự động tạo từ OCR khi không xác định được danh mục'
+                    }
+                )
             
             # Tạo transaction
             transaction = Transaction.objects.create(
@@ -609,6 +628,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     'description': transaction_info.get('description'),
                     'date': transaction_info.get('date').strftime('%Y-%m-%d') if transaction_info.get('date') else None,
                     'merchant_name': ocr_result.get('merchant_name'),
+                    'items': ocr_result.get('items', []),
                 },
                 'raw_text': ocr_result.get('raw_text', '')[:200],  # Preview text
             }, status=status.HTTP_201_CREATED)

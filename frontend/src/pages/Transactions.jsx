@@ -468,6 +468,41 @@ function Transactions() {
                   {ocrResult.extracted_info?.category && <p>Danh mục: {ocrResult.extracted_info.category}</p>}
                   {ocrResult.extracted_info?.description && <p>Mô tả: {ocrResult.extracted_info.description}</p>}
                   {ocrResult.extracted_info?.merchant_name && <p>Cửa hàng: {ocrResult.extracted_info.merchant_name}</p>}
+                  {Array.isArray(ocrResult.extracted_info?.items) && ocrResult.extracted_info.items.length > 0 && (
+                    <div className="mt-3">
+                      <p className="font-medium mb-2">Chi tiết món:</p>
+                      <div className="overflow-x-auto border border-green-200 rounded">
+                        <table className="min-w-full text-xs md:text-sm">
+                          <thead className="bg-green-100">
+                            <tr>
+                              <th className="text-left px-2 py-1">Tên món</th>
+                              <th className="text-right px-2 py-1">SL</th>
+                              <th className="text-right px-2 py-1">Giá tiền</th>
+                              <th className="text-right px-2 py-1">Thành tiền</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ocrResult.extracted_info.items.map((item, idx) => (
+                              <tr key={`${item.name}-${idx}`} className="border-t border-green-100">
+                                <td className="px-2 py-1">{item.name}</td>
+                                <td className="text-right px-2 py-1">{Number(item.quantity || 1)}</td>
+                                <td className="text-right px-2 py-1">{Number(item.unit_price || item.line_total || 0).toLocaleString('vi-VN')}₫</td>
+                                <td className="text-right px-2 py-1 font-medium">{Number(item.line_total || 0).toLocaleString('vi-VN')}₫</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-green-300 bg-green-50">
+                              <td className="px-2 py-1 font-semibold" colSpan={3}>Tổng cộng</td>
+                              <td className="text-right px-2 py-1 font-semibold">
+                                {Number(ocrResult.extracted_info?.amount || 0).toLocaleString('vi-VN')}₫
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
