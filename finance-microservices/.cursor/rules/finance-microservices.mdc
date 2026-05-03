@@ -1,35 +1,45 @@
 ---
-description: Hệ quản lý tài chính cá nhân thông minh — Django Core + FastAPI AI/NLP; đọc .claude/rules trước khi chỉnh lớn
+description: Finance Microservices — Spring Cloud (Java 21, Spring Boot 3.3.x, Spring Cloud 2024.0.x). Đọc .claude/rules trước khi chỉnh lớn.
 globs:
   - "**/*"
 ---
 
 # Finance Microservices — Quy tắc Cursor
 
-Repo triển khai **quản lý tài chính cá nhân thông minh** tách **Core API (Django + DRF + PostgreSQL)** và **AI/NLP Service (FastAPI + Gemini)**. LLM **không** thay thế cơ sở dữ liệu: mọi ghi nhận giao dịch/ngân sách qua **Core**; AI chỉ **chat, dự đoán LLM, parse ngôn ngữ** và gọi Core bằng **HTTP + Token user**.
+Repo triển khai **quản lý tài chính cá nhân thông minh** theo kiến trúc **Spring Cloud microservices**: `api-gateway` + `discovery-server` (Eureka) + `config-server` + `auth-service` + `transaction-service` + `budget-service` + `notification-service` + `ai-service` (Spring AI + Google Gemini).
+
+LLM **không** thay thế cơ sở dữ liệu: mọi ghi giao dịch/ngân sách qua REST của service tương ứng; `ai-service` chỉ **chat, predictions, parse NLP** và gọi service khác bằng **Feign + JWT forward**.
 
 ## Đọc bắt buộc khi đổi kiến trúc hoặc API
 
 | File | Nội dung |
 |------|----------|
-| `finance-microservices/.claude/rules/system-design.md` | Ranh giới service, luồng |
-| `finance-microservices/.claude/rules/backend-conventions.md` | Django Core + FastAPI AI |
-| `finance-microservices/.claude/rules/frontend-conventions.md` | React/Vite, env, Token |
-| `finance-microservices/.claude/rules/api-conventions.md` | REST, header, `/v1` AI |
-| `finance-microservices/.claude/rules/security.md` | Secret, production |
+| `finance-microservices/.claude/rules/system-design.md` | Bounded context, gateway, JWT, sequence diagram |
+| `finance-microservices/.claude/rules/tech-stack.md` | Java 21, Spring Boot 3.3.x, Spring Cloud 2024.0.x |
+| `finance-microservices/.claude/rules/backend-conventions.md` | Layer controller/service/repository, DTO, MapStruct, Flyway |
+| `finance-microservices/.claude/rules/api-conventions.md` | REST, Bearer JWT, ProblemDetail, pagination Spring Data |
+| `finance-microservices/.claude/rules/security.md` | JWT secret, không commit GEMINI/GCP key |
 
 ## Ranh giới thư mục
 
-- **Core**: `finance-microservices/services/core-api` — ORM, migrations, mọi `/api/` trừ gọi Gemini.
-- **AI**: `finance-microservices/services/ai-nlp-service` — chỉ gọi Core qua HTTP; `GEMINI_API_KEY` chỉ ở env AI service.
+- **Gateway**: `finance-microservices/services/api-gateway` — JWT GlobalFilter, route, CORS.
+- **Eureka**: `finance-microservices/services/discovery-server`.
+- **Config**: `finance-microservices/services/config-server` — đọc từ `infra/config-repo`.
+- **Auth**: `finance-microservices/services/auth-service` — phát hành JWT.
+- **Transaction**: `finance-microservices/services/transaction-service` — Category, Transaction.
+- **Budget**: `finance-microservices/services/budget-service`.
+- **Notification**: `finance-microservices/services/notification-service` — email/JavaMailSender.
+- **AI**: `finance-microservices/services/ai-service` — Spring AI Vertex Gemini, không có DB.
 - **Compose**: `finance-microservices/infra/docker-compose.yml`.
 
 ## Quy tắc cứng
 
-1. Không thêm Gemini / SDK Generative AI vào Core.
-2. AI service không dùng Django ORM cho dữ liệu người dùng.
-3. Chat monolith cũ `POST /api/chatbot/` → client dùng AI `POST /v1/chat`.
-4. Không commit secret; không nhúng API key Gemini vào frontend (`VITE_*` không chứa khóa LLM).
+1. **Không** thêm Gemini / Spring AI starter ngoài `ai-service`.
+2. **Không** FK JPA chéo database giữa các service; ID rời + Feign khi cần data chéo.
+3. Auth: `Authorization: Bearer <jwt>` — không dùng kiểu DRF `Token <key>`.
+4. Không commit secret; FE không chứa `GEMINI_API_KEY`, `JWT_SECRET`, GCP credentials.
+5. Schema thay đổi → thêm Flyway migration mới (`V{n}__*.sql`).
+6. Mọi service phải `@SpringBootApplication`, đăng ký Eureka, bootstrap qua Config Server.
 
 ## Tài liệu ngắn
 

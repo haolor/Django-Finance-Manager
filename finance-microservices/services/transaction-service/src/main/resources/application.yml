@@ -1,0 +1,43 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: transaction-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_TX_HOST:localhost}:${POSTGRES_TX_PORT:5434}/${POSTGRES_TX_DB:transaction_db}
+    username: ${POSTGRES_TX_USER:postgres}
+    password: ${POSTGRES_TX_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+finance:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:please-change-me-to-a-32-bytes-minimum-secret-key}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

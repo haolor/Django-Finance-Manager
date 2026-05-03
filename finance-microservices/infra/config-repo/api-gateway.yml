@@ -1,0 +1,8 @@
+finance:
+  security:
+    jwt:
+      public-paths:
+        - /api/auth/register
+        - /api/auth/login
+        - /actuator/health
+        - /actuator/info

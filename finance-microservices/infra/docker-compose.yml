@@ -1,50 +1,218 @@
+name: finance-microservices
+
+x-common-env: &common-env
+  EUREKA_URL: http://discovery-server:8761/eureka/
+  CONFIG_SERVER_URL: http://config-server:8888
+  JWT_SECRET: ${JWT_SECRET:-please-change-me-to-a-32-bytes-minimum-secret-key}
+
 services:
-  db:
+  postgres-auth:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: finance_db
+      POSTGRES_DB: auth_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - finance_pgdata:/var/lib/postgresql/data
+      - finance_pg_auth:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d finance_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_db"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  core-api:
-    build:
-      context: ../services/core-api
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+  postgres-transaction:
+    image: postgres:16-alpine
     environment:
-      DEBUG: "True"
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,core-api
-      POSTGRES_DB: finance_db
+      POSTGRES_DB: transaction_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5434:5432"
+    volumes:
+      - finance_pg_tx:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d transaction_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-budget:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: budget_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5435:5432"
+    volumes:
+      - finance_pg_budget:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d budget_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-notification:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5436:5432"
+    volumes:
+      - finance_pg_notif:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d notification_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  config-server:
+    build:
+      context: ..
+      dockerfile: services/config-server/Dockerfile
+    ports:
+      - "8888:8888"
+    environment:
+      CONFIG_NATIVE_SEARCH_LOCATIONS: file:/app/config-repo
+    volumes:
+      - ./config-repo:/app/config-repo:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  discovery-server:
+    build:
+      context: ..
+      dockerfile: services/discovery-server/Dockerfile
+    ports:
+      - "8761:8761"
+    environment:
+      EUREKA_HOSTNAME: discovery-server
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: services/api-gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *common-env
+      GATEWAY_ALLOWED_ORIGINS: ${GATEWAY_ALLOWED_ORIGINS:-*}
     depends_on:
-      db:
+      config-server:
+        condition: service_healthy
+      discovery-server:
         condition: service_healthy
 
-  ai-nlp:
+  auth-service:
     build:
-      context: ../services/ai-nlp-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
     ports:
-      - "8001:8000"
+      - "8081:8081"
     environment:
-      CORE_API_BASE_URL: http://core-api:8000
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      <<: *common-env
+      POSTGRES_AUTH_HOST: postgres-auth
+      POSTGRES_AUTH_PORT: "5432"
+      POSTGRES_AUTH_DB: auth_db
+      POSTGRES_AUTH_USER: postgres
+      POSTGRES_AUTH_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     depends_on:
-      - core-api
+      postgres-auth:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+
+  transaction-service:
+    build:
+      context: ..
+      dockerfile: services/transaction-service/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *common-env
+      POSTGRES_TX_HOST: postgres-transaction
+      POSTGRES_TX_PORT: "5432"
+      POSTGRES_TX_DB: transaction_db
+      POSTGRES_TX_USER: postgres
+      POSTGRES_TX_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      postgres-transaction:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+
+  budget-service:
+    build:
+      context: ..
+      dockerfile: services/budget-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *common-env
+      POSTGRES_BUDGET_HOST: postgres-budget
+      POSTGRES_BUDGET_PORT: "5432"
+      POSTGRES_BUDGET_DB: budget_db
+      POSTGRES_BUDGET_USER: postgres
+      POSTGRES_BUDGET_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      postgres-budget:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      <<: *common-env
+      POSTGRES_NOTIF_HOST: postgres-notification
+      POSTGRES_NOTIF_PORT: "5432"
+      POSTGRES_NOTIF_DB: notification_db
+      POSTGRES_NOTIF_USER: postgres
+      POSTGRES_NOTIF_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+
+  ai-service:
+    build:
+      context: ..
+      dockerfile: services/ai-service/Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      <<: *common-env
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+    depends_on:
+      discovery-server:
+        condition: service_healthy
 
 volumes:
-  finance_pgdata:
+  finance_pg_auth:
+  finance_pg_tx:
+  finance_pg_budget:
+  finance_pg_notif:

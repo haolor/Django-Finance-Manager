@@ -1,0 +1,37 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: budget-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_BUDGET_HOST:localhost}:${POSTGRES_BUDGET_PORT:5435}/${POSTGRES_BUDGET_DB:budget_db}
+    username: ${POSTGRES_BUDGET_USER:postgres}
+    password: ${POSTGRES_BUDGET_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+finance:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:please-change-me-to-a-32-bytes-minimum-secret-key}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

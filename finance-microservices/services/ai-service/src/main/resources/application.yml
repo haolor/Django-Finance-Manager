@@ -1,0 +1,36 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ai-service
+  ai:
+    vertex:
+      ai:
+        gemini:
+          project-id: ${VERTEX_PROJECT_ID:}
+          location: ${VERTEX_LOCATION:us-central1}
+          chat:
+            options:
+              model: ${GEMINI_MODEL:gemini-2.0-flash}
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+finance:
+  ai:
+    provider: ${AI_PROVIDER:gemini}
+    model: ${GEMINI_MODEL:gemini-2.0-flash}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:please-change-me-to-a-32-bytes-minimum-secret-key}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

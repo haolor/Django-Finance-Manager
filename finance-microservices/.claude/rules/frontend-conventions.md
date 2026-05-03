@@ -1,6 +1,6 @@
-# Quy ước Frontend — Ứng dụng tài chính cá nhân (React + Vite)
+# Quy ước Frontend — React + Vite (gọi qua API Gateway)
 
-Tài liệu này chuẩn hóa **client web/mobile-web** tương tác với **Core API** và **AI/NLP Service** trong kiến trúc microservice. Repo frontend có thể nằm ngoài `finance-microservices/` nhưng **phải tuân** các quy tắc dưới đây để đồng bộ với backend hiện tại.
+Tài liệu chuẩn hóa **client web/mobile-web** tương tác với hệ Spring Cloud microservices. Repo frontend có thể nằm ngoài `finance-microservices/` nhưng phải tuân các quy tắc dưới.
 
 ---
 
@@ -10,49 +10,53 @@ Tài liệu này chuẩn hóa **client web/mobile-web** tương tác với **Cor
 |----------|----------|---------|
 | Framework | React 18+ | Functional components, hooks |
 | Build | Vite | Env prefix `VITE_` |
-| Styling | Tailwind CSS | Design tokens/spacing thống nhất |
+| Styling | Tailwind CSS | Design tokens nhất quán |
 | Routing | React Router | Bảo vệ route cần đăng nhập |
-| HTTP | `fetch` hoặc axios | Một lớp `apiClient` tập trung |
-| State | Context / Zustand / React Query (tuỳ dự án) | Ưu tiên cache có thời hạn cho danh sách giao dịch |
+| HTTP | `fetch` / axios | **Một** lớp `apiClient` tập trung |
+| State | React Query khuyến nghị cho list/detail | |
 
 ---
 
-## 2. Biến môi trường (bắt buộc ý nghĩa)
+## 2. Biến môi trường
 
-Đặt trong `.env` / `.env.example` của frontend (không commit secret):
+```env
+VITE_API_BASE_URL=http://localhost:8080
+```
 
-| Biến | Ví dụ | Mục đích |
-|------|-------|----------|
-| `VITE_CORE_API_URL` | `http://localhost:8000/api` | Base URL **có suffix `/api`** — mọi CRUD, auth, OCR, sync |
-| `VITE_AI_API_URL` | `http://localhost:8001` | Base URL AI service **không** thêm `/api` — path kiểu `/v1/chat` |
+**Một** base URL duy nhất = `api-gateway`. Frontend KHÔNG biết các service backend riêng lẻ.
 
-**Không** định nghĩa `VITE_GEMINI_API_KEY` hoặc bất kỳ khóa LLM nào trên frontend.
+CẤM tuyệt đối:
+
+- `VITE_GEMINI_API_KEY`
+- `VITE_JWT_SECRET`
+- `VITE_<...>_PRIVATE_*`
 
 ---
 
-## 3. Xác thực (Token DRF)
+## 3. Xác thực — JWT Bearer
 
-- Sau `POST /api/auth/login/` (Core), lưu token theo cơ chế an toàn của app (memory + `httpOnly` cookie nếu có BFF; hoặc `localStorage` chỉ khi chấp nhận rủi ro XSS — ưu tiên giảm thời gian sống token và CSP).
-- Mọi request tới Core và AI (khi user đã đăng nhập) gửi header:
+1. Sau `POST /api/auth/login` lưu `token` từ `AuthResponse`.
+2. Mọi request gắn header:
 
 ```http
-Authorization: Token <token_string>
+Authorization: Bearer <jwt>
 Content-Type: application/json
 ```
 
-- **401**: đăng xuất client-side hoặc refresh flow (nếu sau này có); không lặp vô hạn cùng một request.
+3. Lưu token: ưu tiên **memory + httpOnly cookie** qua BFF; nếu chưa có BFF thì `localStorage` (chấp nhận rủi ro XSS) + giảm TTL token.
+4. `401` → đăng xuất phía client (xóa token, redirect login).
 
 ---
 
-## 4. Phân luồng gọi API
+## 4. Phân luồng gọi API (qua gateway)
 
-| Nghiệp vụ | Service | Ví dụ endpoint |
-|-----------|---------|----------------|
-| Đăng ký/đăng nhập, CRUD giao dịch, danh mục, ngân sách, thông báo, upload OCR | **Core** | `${VITE_CORE_API_URL}/transactions/` … |
-| Chat AI, dự đoán LLM (nếu dùng), parse câu tiếng Việt/Anh thành giao dịch | **AI** | `${VITE_AI_API_URL}/v1/chat`, `/v1/predictions`, `/v1/parse-transaction` |
-| Ngữ cảnh tài chính cho LLM | **Core** (AI service gọi nội bộ) | FE **không** gọi trực tiếp trừ khi có màn debug; bình thường chỉ AI gọi `GET /api/ai/finance-context/` |
-
-Mapping chi tiết monolith → microservices: [README.md](../../README.md) và [api-conventions.md](api-conventions.md).
+| Nghiệp vụ | Path |
+|-----------|------|
+| Đăng ký / đăng nhập / profile / preferences | `${VITE_API_BASE_URL}/api/auth/...` |
+| Category, Transaction | `${VITE_API_BASE_URL}/api/categories`, `/api/transactions` |
+| Budget | `${VITE_API_BASE_URL}/api/budgets` |
+| Notification | `${VITE_API_BASE_URL}/api/notifications` |
+| Chat AI / parse / predictions | `${VITE_API_BASE_URL}/v1/chat`, `/v1/parse-transaction`, `/v1/predictions` |
 
 ---
 
@@ -60,69 +64,67 @@ Mapping chi tiết monolith → microservices: [README.md](../../README.md) và 
 
 ```
 src/
-  app/                 # providers, router, layout
+  app/                   # providers, router, layout
   features/
     auth/
     transactions/
     budgets/
-    chat/              # UI chat → chỉ gọi VITE_AI_API_URL
+    notifications/
+    chat/
   shared/
-    api/               # coreClient.ts, aiClient.ts, interceptors
+    api/                 # apiClient.ts, interceptors (gắn Bearer)
     components/
     hooks/
-    lib/               # format tiền tệ, date theo locale
+    lib/                 # format tiền, date theo locale
   assets/
 ```
 
-- **Format tiền**: dùng `Intl.NumberFormat` hoặc thư viện đã chọn; không hardcode ký hiệu sai locale.
-- **Ngày gửi lên API**: theo contract backend (thường `YYYY-MM-DD` cho query range).
+---
+
+## 6. Pagination
+
+Server trả `PageResponse<T>`:
+
+```json
+{ "content": [...], "page": 0, "size": 20, "totalElements": 137, "totalPages": 7, "first": true, "last": false }
+```
+
+Client gửi: `?page=0&size=20&sort=transactionDate,desc`.
 
 ---
 
-## 6. Đặt tên và component
+## 7. Xử lý lỗi
 
-| Loại | Quy ước | Ví dụ |
-|------|---------|-------|
-| Component file | PascalCase | `TransactionList.tsx` |
-| Hooks | camelCase + `use` prefix | `useTransactions.ts` |
-| API modules | theo domain | `transactionsApi.ts` |
-| Hằng số route | `UPPER_SNAKE` hoặc object frozen | `ROUTES.TRANSACTIONS` |
+- Server trả `ProblemDetail` (RFC 7807): `{ status, title, detail, errors? }`.
+- Hiển thị `detail` cho user; với 400 + `errors` map về form field.
 
-Tránh logic nghiệp vụ tài chính phức tạp trong JSX; tách hooks/services.
-
----
-
-## 7. Xử lý lỗi và loading
-
-- **Core (DRF)**: lỗi thường `{ "detail": "..." }` hoặc lỗi theo field serializer — hiển thị message thân thiện, không leak stack trace.
-- **AI (FastAPI)**: hiển thị lỗi mạng/timeout rõ ràng; có retry có giới hạn cho chat nếu cần.
-- Trạng thái loading: skeleton hoặc spinner trên vùng ảnh hưởng; tránh chặn toàn app trừ khi bắt buộc.
+```ts
+type ProblemDetail = {
+  status: number;
+  title: string;
+  detail: string;
+  errors?: Record<string, string>;
+};
+```
 
 ---
 
-## 8. Bảo mật & privacy UI
+## 8. Format
 
-- Không log token hoặc PII đầy đủ ra `console` trong production build.
-- Form nhập số tiền: validate min/max hợp lý; cảnh báo khi vượt ngân sách (nếu có dữ liệu local).
-- Tuân [security.md](security.md) phía backend; phía FE: CSP, không inline script không cần thiết khi deploy.
-
----
-
-## 9. Accessibility & i18n (khuyến nghị)
-
-- Nhãn form, `aria-*` cho modal và live region cho thông báo lỗi chat.
-- Chuẩn bị tách chuỗi UI (Việt/Anh) nếu sản phẩm mở rộng — key ổn định, không nhúng HTML trong chuỗi dịch.
+- Tiền: `Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })`.
+- Ngày: `Intl.DateTimeFormat('vi-VN')` hoặc `dayjs`.
+- Gửi `LocalDate` lên server: `YYYY-MM-DD`.
 
 ---
 
-## 10. Kiểm thử frontend
+## 9. Bảo mật UI
 
-- Unit: utils format tiền/ngày.
-- Integration: mock Core/AI với MSW hoặc Vitest + fetch mock.
-- E2E (tùy): luồng login → tạo giao dịch → mở chat (cần env test).
+- Không log token / PII ra `console` ở production build.
+- CSP: hạn chế inline script.
+- Validate input phía FE chỉ cho UX; server vẫn validate `@Valid`.
 
 ---
 
-## Tóm tắt một dòng
+## 10. Tóm tắt một dòng
 
-**Core = dữ liệu & nghiệp vụ; AI = LLM & NLP; FE = hai base URL + một Token — không bao giờ có Gemini key trên trình duyệt.**
+**Một base URL = gateway. Một header = `Authorization: Bearer <jwt>`. Không có khóa LLM trên trình duyệt.**

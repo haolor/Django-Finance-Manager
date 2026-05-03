@@ -1,0 +1,45 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_AUTH_HOST:localhost}:${POSTGRES_AUTH_PORT:5432}/${POSTGRES_AUTH_DB:auth_db}
+    username: ${POSTGRES_AUTH_USER:postgres}
+    password: ${POSTGRES_AUTH_PASSWORD:Kien04112004!}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+finance:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:please-change-me-to-a-32-bytes-minimum-secret-key}
+      issuer: finance-auth-service
+      access-token-ttl: PT12H
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

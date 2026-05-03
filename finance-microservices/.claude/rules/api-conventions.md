@@ -1,116 +1,140 @@
-# Quy ước API — Core (Django DRF) & AI (FastAPI)
+# Quy ước API — REST qua API Gateway
 
-Chuẩn hóa **định dạng**, **header**, **endpoint**, và **hợp đồng lỗi** giữa client và hai service.
+Chuẩn hóa **định dạng**, **header**, **endpoint**, **paging**, **lỗi** giữa client và toàn hệ thống.
 
 ---
 
-## 1. Core API — prefix `/api/`
+## 1. Entry point duy nhất
 
-### 1.1 Chung
+- Client chỉ biết **một** base URL = `api-gateway` (mặc định `http://localhost:8080`).
+- `api-gateway` route theo path:
+  - `/api/auth/**` → `auth-service`
+  - `/api/categories/**`, `/api/transactions/**` → `transaction-service`
+  - `/api/budgets/**` → `budget-service`
+  - `/api/notifications/**` → `notification-service`
+  - `/v1/**` → `ai-service`
 
-- **Định dạng**: JSON, mã hóa **UTF-8**.
-- **Content-Type** request có body: `application/json` (trừ upload file theo endpoint OCR/multipart).
-- **Version path**: hiện **không** bắt buộc `v1` trên toàn bộ Core (giữ tương thích client/mobile). Endpoint mới có thể dùng `/api/v2/` nếu breaking change được kiểm soát.
+---
 
-### 1.2 Lỗi (DRF)
+## 2. Định dạng
 
-- Thường gặp: `{ "detail": "Thông báo lỗi." }`.
-- Lỗi validation serializer: object với key là tên field, giá trị là danh sách chuỗi lỗi.
-- HTTP status: 400 (validation), 401 (chưa auth), 403 (không quyền), 404, 500 theo chuẩn HTTP.
+- **JSON UTF-8**.
+- `Content-Type: application/json` cho request có body.
+- Date/time:
+  - `LocalDate` → `YYYY-MM-DD`.
+  - `Instant` → ISO 8601 với `Z` (UTC).
+  - `BigDecimal` → string số (Jackson default), tránh mất chính xác.
 
-### 1.3 Phân trang
+---
 
-- Query: `page`, `page_size` (theo cấu hình DRF project).
-- Response kiểu paginated: `count`, `next`, `previous`, `results` (tùy class pagination).
-
-### 1.4 Auth
+## 3. Auth
 
 ```http
-Authorization: Token <token_string>
+Authorization: Bearer <jwt>
 ```
 
----
-
-## 2. AI Service — versioning `/v1/`
-
-### 2.1 Health
-
-- **`GET /health`**: readiness (cho orchestrator/load balancer).
-
-### 2.2 Chat
-
-- **`POST /v1/chat`**
-  - **Headers**: `Authorization: Token <user_token>`, `Content-Type: application/json`
-  - **Body** (tối thiểu): `{ "message": "Nội dung người dùng" }`
-  - **Hành vi**: service gọi Core (ví dụ `GET /api/ai/finance-context/`) rồi Gemini; client không gửi Gemini key.
-
-### 2.3 Predictions (LLM + fallback)
-
-- **`GET /v1/predictions`**
-  - **Headers**: `Authorization: Token <user_token>`
-  - **Query**: `start_date`, `end_date` định dạng **`YYYY-MM-DD`**
-  - **Hành vi**: ưu tiên Gemini; lỗi/mất key có thể fallback sang Core local — xem README mapping.
-
-### 2.4 Parse transaction (NLP)
-
-- **`POST /v1/parse-transaction`**
-  - **Headers**: `Authorization: Token <user_token>`
-  - **Body**: `{ "text": "Cà phê 45k chiều nay" }`
-  - **Hành vi**: AI suy luận → tạo giao dịch qua Core (`POST` transactions hoặc endpoint tương đương), không ghi DB trực tiếp.
-
-### 2.5 Lỗi (FastAPI)
-
-- Giữ mặc định FastAPI/Starlette: `{"detail": ...}` cho nhiều lỗi HTTP.
-- Khi refactor thống nhất toàn hệ, có thể bọc envelope — mục 4.
+- JWT phát hành bởi `auth-service` (HS256, claim `sub=userId`, `username`, `email`, `iat`, `exp`).
+- Public path (không cần JWT): `/api/auth/register`, `/api/auth/login`, `/actuator/health`, `/actuator/info`.
+- Hết hạn → `401 Unauthorized` với header `WWW-Authenticate: Bearer error="Invalid token"`.
 
 ---
 
-## 3. Service-to-service (AI → Core)
-
-- Luôn kèm **token của user** (forward từ client), không dùng shared service secret cho truy cập dữ liệu cá nhân trừ khi thiết kế lại.
-- Base URL Core trên AI: biến `CORE_API_BASE_URL` (Docker: hostname service nội bộ).
-
-### 3.1 Correlation (khuyến nghị sau này)
-
-- Client gửi tùy chọn: `X-Request-ID: <uuid>`
-- Core và AI log cùng id để trace — cần middleware.
-
----
-
-## 4. Envelope lỗi thống nhất (khi refactor — gợi ý)
-
-Hiện tại giữ format DRF/FastAPI mặc định. Khi chuẩn hóa:
+## 4. Lỗi — RFC 7807 ProblemDetail
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Mô tả ngắn cho người dùng / developer",
-    "field": "amount"
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Dữ liệu không hợp lệ",
+  "errors": {
+    "amount": "must be greater than or equal to 0.01"
   }
 }
 ```
 
-Frontend nên có hàm `parseApiError(response)` tách hai kiểu trong giai đoạn chuyển tiếp.
+Status convention:
+
+| Status | Khi nào |
+|--------|---------|
+| `400` | Validation `@Valid`, body sai |
+| `401` | Thiếu / sai JWT |
+| `403` | JWT đúng nhưng không đủ quyền (chưa dùng nhiều) |
+| `404` | Resource không tồn tại / không thuộc user |
+| `409` | Conflict (username/email trùng) |
+| `502` | Lỗi service downstream (Feign) |
+| `503` | Provider AI chưa cấu hình |
 
 ---
 
-## 5. Mapping nhanh từ monolith
+## 5. Pagination — Spring Data
 
-| Monolith | Microservice |
-|----------|----------------|
-| `POST /api/chatbot/` | `POST {AI}/v1/chat` |
-| NLP tạo giao dịch | `POST {AI}/v1/parse-transaction` |
-| Predictions Gemini | `GET {AI}/v1/predictions` |
-| Predictions chỉ local | `GET {CORE}/api/ai/predictions/` |
-| Ngữ cảnh cho LLM | `GET {CORE}/api/ai/finance-context/` (thường AI gọi, không phải FE) |
+Query param chuẩn `Pageable`:
 
-Chi tiết: [README.md](../../README.md).
+- `?page=0&size=20&sort=transactionDate,desc`
+
+Response wrap bằng `PageResponse<T>`:
+
+```json
+{
+  "content": [...],
+  "page": 0,
+  "size": 20,
+  "totalElements": 137,
+  "totalPages": 7,
+  "first": true,
+  "last": false
+}
+```
 
 ---
 
-## 6. Tài liệu liên quan
+## 6. Endpoint chính
 
-- [backend-conventions.md](backend-conventions.md) — phân tầng Django/FastAPI
-- [frontend-conventions.md](frontend-conventions.md) — hai base URL và Token
-- [security.md](security.md) — không lộ secret
+### 6.1 auth-service
+
+| Method | Path | Body | Status |
+|--------|------|------|--------|
+| POST | `/api/auth/register` | `RegisterRequest` | 201 |
+| POST | `/api/auth/login` | `LoginRequest` | 200 |
+| GET | `/api/auth/profile` | — | 200 |
+| GET | `/api/auth/preferences` | — | 200 |
+| PUT | `/api/auth/preferences` | `UserPreferencesDto` | 200 |
+
+### 6.2 transaction-service
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| GET | `/api/categories` | List |
+| POST | `/api/categories` | Create (201) |
+| GET/PUT/DELETE | `/api/categories/{id}` | Detail / Update / Delete (204) |
+| GET | `/api/transactions?categoryId=&fromDate=&toDate=&page=&size=&sort=` | PageResponse |
+| POST | `/api/transactions` | Create (201) |
+| GET/PUT/DELETE | `/api/transactions/{id}` | Của user hiện tại |
+
+### 6.3 ai-service
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | `/v1/chat` | `{ "message": "..." }` → reply |
+| POST | `/v1/parse-transaction` | `{ "text": "..." }` (501 — TODO) |
+| GET | `/v1/predictions?startDate=&endDate=` | TODO |
+
+---
+
+## 7. Header bổ sung
+
+| Header | Hướng | Ai set | Ý nghĩa |
+|--------|-------|--------|---------|
+| `Authorization` | client → gateway | client | Bearer JWT |
+| `X-User-Id` | gateway → service | gateway | userId từ claim `sub` |
+| `X-Username` | gateway → service | gateway | username từ claim |
+| `X-Request-ID` | client → gateway → service | client (optional) | Trace ID; khuyến nghị thêm filter MDC sau |
+
+---
+
+## 8. Versioning
+
+- Endpoint nghiệp vụ: prefix `/api/`.
+- Endpoint AI: prefix `/v1/` (đã version sẵn).
+- Breaking change: phát hành `/api/v2/...` thay vì sửa contract cũ.

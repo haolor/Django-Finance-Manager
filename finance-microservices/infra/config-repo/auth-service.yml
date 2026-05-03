@@ -1,0 +1,5 @@
+finance:
+  security:
+    jwt:
+      issuer: finance-auth-service
+      access-token-ttl: PT12H

@@ -1,6 +1,6 @@
-# Hệ thống quản lý tài chính cá nhân thông minh — Kiến trúc Microservices
+# Hệ thống quản lý tài chính cá nhân thông minh — Spring Cloud Microservices
 
-Repo này triển khai **ứng dụng quản lý tài chính cá nhân** theo hướng **tách service**: **Core Finance API** (Django REST Framework, PostgreSQL) đảm nhiệm **toàn bộ dữ liệu và nghiệp vụ CRUD**, còn **AI/NLP Service** (FastAPI, Google Gemini) đảm nhiệm **hội thoại thông minh, dự đoán nâng cao (LLM), và phân tích ngôn ngữ tự nhiên** để tạo giao dịch — **mọi ghi cơ sở dữ liệu** vẫn đi qua Core với **xác thực token người dùng**.
+Repo này triển khai **ứng dụng quản lý tài chính cá nhân** theo kiến trúc **Spring Cloud microservices**: tách bounded context, **database-per-service**, **service discovery (Eureka)**, **centralized config (Spring Cloud Config)**, **API gateway (Spring Cloud Gateway)**, **JWT auth**, và **Spring AI + Google Gemini** cho phần AI/NLP.
 
 ---
 
@@ -9,24 +9,22 @@ Repo này triển khai **ứng dụng quản lý tài chính cá nhân** theo h�
 ### 1.1 Mục tiêu sản phẩm
 
 - **Quản lý chủ động**: ghi nhận thu/chi, phân loại, ngân sách, nhắc nhở, tùy chỉnh giao diện và hành vi.
-- **Hiểu sâu**: xu hướng chi tiêu, phát hiện bất thường, gợi ý tiết kiệm (một phần tính **cục bộ** trên Core, không phụ thuộc LLM).
-- **Tương tác tự nhiên**: người dùng mô tả bằng ngôn ngữ hàng ngày (“cà phê 45k chiều nay”) → hệ thống **parse** và tạo giao dịch qua API.
-- **Trợ lý hội thoại**: chat theo **ngữ cảnh tài chính** (số dư, gần đây chi gì) — LLM chỉ nhận **bối cảnh đã tổng hợp** từ Core, không thay thế nguồn sự thật dữ liệu.
+- **Hiểu sâu**: xu hướng chi tiêu, phát hiện bất thường, gợi ý tiết kiệm — tính cục bộ trong service nghiệp vụ, không phụ thuộc LLM.
+- **Tương tác tự nhiên**: người dùng mô tả bằng ngôn ngữ hàng ngày ("cà phê 45k chiều nay") → `ai-service` parse và tạo giao dịch qua `transaction-service` (không bypass auth).
+- **Trợ lý hội thoại**: chat theo **ngữ cảnh tài chính** (số dư, gần đây chi gì) — LLM chỉ nhận **bối cảnh đã tổng hợp**, không thay thế nguồn sự thật dữ liệu.
 
 ### 1.2 Ranh giới trách nhiệm
 
 | Lớp | Trách nhiệm |
 |-----|-------------|
-| **Core** | Auth token, mô hình dữ liệu, migrations, REST `/api/`, OCR hóa đơn, thống kê & AI cục bộ, endpoint `finance-context` cho LLM |
-| **AI/NLP** | Gemini chat, Gemini predictions (có fallback), parse NLP → gọi API Core tạo giao dịch |
-| **Client (FE)** | Hai base URL (Core + AI), một token sau đăng nhập — **không** chứa khóa Gemini |
-
-Chi tiết quy chuẩn code và định dạng:
-
-- **Backend**: [.claude/rules/backend-conventions.md](.claude/rules/backend-conventions.md)
-- **Frontend**: [.claude/rules/frontend-conventions.md](.claude/rules/frontend-conventions.md)
-- **Thiết kế hệ thống**: [.claude/rules/system-design.md](.claude/rules/system-design.md)
-- **API**: [.claude/rules/api-conventions.md](.claude/rules/api-conventions.md)
+| `api-gateway` | Single entry point, validate JWT, inject `X-User-Id`, `X-Username`, CORS |
+| `discovery-server` | Eureka — đăng ký và khám phá service |
+| `config-server` | Cấu hình tập trung cho mọi service (profile `native`) |
+| `auth-service` | User, đăng ký/đăng nhập, **phát hành JWT**, profile, preferences |
+| `transaction-service` | Category, Transaction, SpendingPattern, finance-context cho AI |
+| `budget-service` | Budget theo danh mục/chu kỳ, tính usage qua Feign |
+| `notification-service` | Thông báo in-app + email (`JavaMailSender`) |
+| `ai-service` | Spring AI + Gemini: chat, parse NLP, predictions; gọi service khác qua **Feign + JWT forward** |
 
 ---
 
@@ -34,188 +32,185 @@ Chi tiết quy chuẩn code và định dạng:
 
 ```mermaid
 flowchart LR
-  subgraph clients [Clients]
-    Web[Web React]
-    Mobile[Mobile / khác]
-  end
-  subgraph core [Core API Django]
-    API["/api/*"]
-    DB[(PostgreSQL)]
-    API --- DB
-  end
-  subgraph ai [AI NLP FastAPI]
-    V1["/v1/*"]
-    LLM[Gemini API]
-    V1 --- LLM
-  end
-  Web --> API
-  Web --> V1
-  Mobile --> API
-  Mobile --> V1
-  V1 -->|"HTTP + Token user"| API
+  Client[Web React / Mobile] --> GW[api-gateway 8080]
+  GW --> AUTH[auth-service 8081]
+  GW --> TX[transaction-service 8082]
+  GW --> BG[budget-service 8083]
+  GW --> NT[notification-service 8084]
+  GW --> AI[ai-service 8085]
+  GW -. discover .-> EU[discovery-server 8761]
+  AUTH -. discover .-> EU
+  TX -. discover .-> EU
+  BG -. discover .-> EU
+  NT -. discover .-> EU
+  AI -. discover .-> EU
+  AUTH -. config .-> CFG[config-server 8888]
+  TX -. config .-> CFG
+  BG -. config .-> CFG
+  NT -. config .-> CFG
+  AI -. config .-> CFG
+  GW -. config .-> CFG
+  AUTH --- AUTHDB[("auth_db :5433")]
+  TX --- TXDB[("transaction_db :5434")]
+  BG --- BGDB[("budget_db :5435")]
+  NT --- NTDB[("notification_db :5436")]
+  AI --- GEMINI[Google Gemini API]
+  AI -. Feign .-> TX
+  AI -. Feign .-> AUTH
+  NT -. Feign .-> AUTH
+  BG -. Feign .-> TX
 ```
 
-- **Một** PostgreSQL cho Core (mô hình *database-per-service* có thể áp dụng khi tách thêm service sau).
-- AI service **không** lưu trạng thái người dùng lâu dài; có thể bổ sung cache (Redis) sau cho session/chat.
+- **Database-per-service**: 4 PostgreSQL instance độc lập. Không FK chéo DB.
+- **Sync giao tiếp**: REST + Spring Cloud OpenFeign (load-balanced qua Eureka).
+- **Async (tương lai)**: thêm RabbitMQ/Kafka cho event "budget exceeded" → notification.
+
+Chi tiết: [.claude/rules/system-design.md](.claude/rules/system-design.md), [.claude/rules/tech-stack.md](.claude/rules/tech-stack.md).
 
 ---
 
 ## 3. Cấu trúc thư mục repo
 
-| Thư mục | Mô tả |
-|---------|--------|
-| [services/core-api](services/core-api) | Django: auth, categories, transactions, budgets, notifications, preferences, thống kê AI cục bộ (`/api/ai/*` **không** dùng Gemini trực tiếp) |
-| [services/ai-nlp-service](services/ai-nlp-service) | FastAPI: chat Gemini, dự đoán Gemini, `POST /v1/parse-transaction` |
-| [infra](infra) | `docker-compose.yml` (PostgreSQL + hai service) |
-| [.claude](.claude) | Rules, agents, commands phục vụ phát triển có hỗ trợ AI |
-| [AGENTS.md](AGENTS.md) | Hướng dẫn agent / developer |
+```
+finance-microservices/
+  pom.xml                              # Parent multi-module Maven
+  README.md
+  AGENTS.md
+  .env.example
+  .gitignore
+  .claude/                             # Rules, agents, commands
+  .cursor/rules/finance-microservices.mdc
+  infra/
+    docker-compose.yml
+    config-repo/                       # Cấu hình native cho config-server
+  services/
+    config-server/                     # Spring Cloud Config Server (8888)
+    discovery-server/                  # Eureka Server (8761)
+    api-gateway/                       # Spring Cloud Gateway + JWT (8080)
+    auth-service/                      # User + JWT + preferences (8081)
+    transaction-service/               # Category + Transaction (8082)
+    budget-service/                    # Budget (8083, skeleton)
+    notification-service/              # Notification + email (8084, skeleton)
+    ai-service/                        # Chat/NLP/Spring AI Gemini (8085, skeleton)
+```
 
-Cấu trúc file chi tiết: [.claude/rules/project-structure.md](.claude/rules/project-structure.md).
+Chi tiết: [.claude/rules/project-structure.md](.claude/rules/project-structure.md).
 
 ---
 
 ## 4. Chạy nhanh (Docker)
 
-Từ thư mục `infra/`:
+Yêu cầu: Docker 24+ và Docker Compose v2.
 
 ```bash
+cd finance-microservices
+cp .env.example .env
 cd infra
 docker compose up --build
 ```
 
-- **Core API**: `http://localhost:8000/api/`
-- **AI service**: `http://localhost:8001/docs` (OpenAPI)
-- **PostgreSQL**: `localhost:5432` (user/pass `postgres`/`postgres`, DB `finance_db`)
+| Service | URL |
+|---------|-----|
+| API Gateway (entry point) | `http://localhost:8080` |
+| Eureka dashboard | `http://localhost:8761` |
+| Config Server | `http://localhost:8888/auth-service/default` |
+| auth-service (direct) | `http://localhost:8081/actuator/health` |
+| transaction-service | `http://localhost:8082/actuator/health` |
+| budget-service | `http://localhost:8083/actuator/health` |
+| notification-service | `http://localhost:8084/actuator/health` |
+| ai-service | `http://localhost:8085/actuator/health` |
+| Postgres (auth/tx/budget/notif) | `localhost:5433-5436` |
 
-Đặt `GEMINI_API_KEY` (xem [.env.example](.env.example)). Trên Windows PowerShell có thể:
-
-```powershell
-$env:GEMINI_API_KEY="your_key"
-docker compose up --build
-```
+Client **chỉ cần** trỏ vào `http://localhost:8080`.
 
 ---
 
-## 5. Chạy local (không Docker)
+## 5. Chạy local không Docker
 
-1. Tạo venv, cài `services/core-api/requirements.txt`, chạy migrate, `runserver` cổng `8000`.
-2. Cài `services/ai-nlp-service/requirements.txt`, đặt `CORE_API_BASE_URL=http://127.0.0.1:8000`, chạy:
+Yêu cầu: **JDK 21**, **Maven 3.9+**, 4 PostgreSQL DB (port 5433–5436) hoặc dùng `docker compose up postgres-auth postgres-transaction postgres-budget postgres-notification`.
+
+Build toàn bộ:
 
 ```bash
-cd services/ai-nlp-service
-uvicorn app.main:app --reload --port 8001
+mvn -DskipTests clean install
 ```
 
-### 5.1. Lệnh chạy chi tiết trên Windows (PowerShell)
+Chạy theo thứ tự (mỗi lệnh một terminal):
 
-Mở 3 terminal riêng.
-
-Terminal 1 - Core API (Django):
-
-```powershell
-cd services/core-api
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py init_categories
-python manage.py runserver 0.0.0.0:8000
-```
-
-Terminal 2 - AI/NLP Service (FastAPI):
-
-```powershell
-cd services/ai-nlp-service
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:CORE_API_BASE_URL="http://127.0.0.1:8000"
-$env:GEMINI_API_KEY="your_gemini_api_key"
-$env:GEMINI_MODEL="gemini-2.0-flash"
-uvicorn app.main:app --reload --port 8001
-```
-
-Terminal 3 - Frontend React (Vite):
-
-```powershell
-cd ..\..\frontend
-npm install
-npm run dev
-```
-
-Mặc định frontend chạy tại `http://localhost:3000` và đã proxy sẵn:
-
-- `/api/*` -> `http://localhost:8000` (Core API)
-- `/v1/*` -> `http://localhost:8001` (AI service)
-
-Không cần cấu hình CORS thêm cho môi trường dev khi chạy qua Vite proxy.
-
-### 5.2. Biến môi trường frontend (tùy chọn)
-
-Frontend hỗ trợ ghi đè endpoint bằng biến môi trường Vite:
-
-- `VITE_CORE_API_URL` (mặc định `/api`)
-- `VITE_AI_API_URL` (mặc định `/v1`)
-
-Ví dụ file `frontend/.env.local`:
-
-```env
-VITE_CORE_API_URL=/api
-VITE_AI_API_URL=/v1
+```bash
+mvn -pl services/config-server -am spring-boot:run
+mvn -pl services/discovery-server -am spring-boot:run
+mvn -pl services/api-gateway -am spring-boot:run
+mvn -pl services/auth-service -am spring-boot:run
+mvn -pl services/transaction-service -am spring-boot:run
+mvn -pl services/budget-service -am spring-boot:run
+mvn -pl services/notification-service -am spring-boot:run
+mvn -pl services/ai-service -am spring-boot:run
 ```
 
 ---
 
-## 6. Xác thực
+## 6. Xác thực — JWT Bearer
 
-Cả **Core** và **AI** dùng **cùng kiểu token** DRF như monolith:
+1. **Đăng ký**: `POST http://localhost:8080/api/auth/register` body JSON `{username, email, password, firstName?, lastName?}` → `AuthResponse` chứa `token`.
+2. **Đăng nhập**: `POST http://localhost:8080/api/auth/login` → `AuthResponse`.
+3. **Mọi request khác**:
 
 ```http
-Authorization: Token <key>
+Authorization: Bearer <jwt>
 ```
 
-Token thu được sau `POST /api/auth/login/` trên Core. Frontend gửi header này tới **cả hai** service khi đã đăng nhập.
+`api-gateway` verify JWT, trích `sub`/`username` thành header `X-User-Id`, `X-Username` cho downstream. Mỗi service tự verify lại JWT (zero-trust) — yêu cầu cùng `JWT_SECRET`.
 
 ---
 
-## 7. Mapping endpoint (monolith → microservices)
+## 7. Mapping endpoint (so với phiên bản Python cũ)
 
-| Trước (monolith) | Sau |
-|------------------|-----|
-| `POST /api/chatbot/` | `POST http://localhost:8001/v1/chat` (AI) |
-| `GET /api/ai/predictions/` (Gemini) | `GET http://localhost:8001/v1/predictions` (Gemini, fallback Core local) |
-| `GET /api/ai/predictions/` (chỉ local) | `GET http://localhost:8000/api/ai/predictions/` (Core) |
-| `POST .../transactions/nlp_input/` | `POST http://localhost:8001/v1/parse-transaction` |
-| Còn lại (`/api/auth/*`, CRUD, sync, OCR, …) | Core `http://localhost:8000/api/...` |
-
-Core cung cấp **`GET /api/ai/finance-context/`** — JSON tổng hợp cho Gemini (AI service gọi nội bộ với token user).
+| Trước (Django/FastAPI) | Sau (Spring Cloud) |
+|------------------------|--------------------|
+| `POST /api/auth/login/` (DRF Token) | `POST /api/auth/login` → JWT (gateway 8080) |
+| `Authorization: Token <key>` | `Authorization: Bearer <jwt>` |
+| `GET /api/transactions/` | `GET /api/transactions?page=&size=&fromDate=&toDate=&categoryId=` |
+| `GET /api/categories/` | `GET /api/categories` |
+| `POST /api/chatbot/` | `POST /v1/chat` |
+| `POST /api/.../nlp_input/` | `POST /v1/parse-transaction` (TODO scaffold) |
+| `GET /api/ai/finance-context/` | `GET /api/ai/finance-context` (transaction-service, TODO) |
 
 ---
 
 ## 8. Công nghệ (tóm tắt)
 
-Xem đầy đủ [.claude/rules/tech-stack.md](.claude/rules/tech-stack.md):
+- **Java 21 LTS**, **Maven multi-module**.
+- **Spring Boot 3.3.x**, **Spring Cloud 2024.0.x**.
+- **Spring Cloud Gateway** (reactive), **Eureka**, **Config Server**, **OpenFeign**.
+- **Spring Web (MVC)**, **Spring Data JPA**, **Spring Security**, **Spring Validation**, **Spring Mail**.
+- **Flyway**, **PostgreSQL 16**.
+- **JJWT 0.12.x**, **Lombok**, **MapStruct**.
+- **Spring AI** (Vertex Gemini starter) cho `ai-service`.
+- **JUnit 5 + Testcontainers** cho test.
 
-- **Core**: Python 3.12+, Django 6, DRF, PostgreSQL, Token auth, CORS.
-- **AI**: FastAPI, Uvicorn, httpx, Gemini.
-- **Client tham chiếu**: React + Vite + Tailwind; biến `VITE_CORE_API_URL`, `VITE_AI_API_URL`.
+Chi tiết: [.claude/rules/tech-stack.md](.claude/rules/tech-stack.md).
 
 ---
 
 ## 9. Bảo mật và vận hành
 
-- Không commit secret; Gemini chỉ trên env AI service — [.claude/rules/security.md](.claude/rules/security.md).
+- Không commit `.env`, JWT secret, GCP credentials. Xem [.claude/rules/security.md](.claude/rules/security.md).
+- `docker compose` ở môi trường dev; production khuyến nghị Kubernetes + secret manager (Vault / GCP Secret Manager).
+- Rate limit, TLS termination: cấu hình ở `api-gateway` hoặc reverse proxy phía trước.
 - Git workflow: [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md).
 
 ---
 
 ## 10. Repo monolith tham chiếu
 
-Mã nguồn monolith gốc: [Django-Finance-Manager](../). Có thể khởi tạo git trong thư mục microservices và đẩy lên remote độc lập nếu cần.
+Mã nguồn monolith gốc (Django): [Django-Finance-Manager](../). Microservices repo này độc lập về schema và lifecycle; có thể tách thành remote riêng.
 
 ---
 
 ## 11. Tài liệu cho AI / Cursor
 
 - [.claude/rules/](.claude/rules/) — quy tắc kỹ thuật đầy đủ
+- [.claude/agents/](.claude/agents/) — vai trò agent (backend-spring, ai-service, gateway-infra, frontend-react, qa)
+- [.claude/commands/](.claude/commands/) — review/deploy/fix-issue
 - [.cursor/rules/finance-microservices.mdc](.cursor/rules/finance-microservices.mdc) — gợi ý ngắn cho Cursor

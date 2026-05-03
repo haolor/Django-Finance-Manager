@@ -1,9 +1,43 @@
+# Env / secrets
 .env
-.env.local
+*.env.local
+gcp-credentials*.json
 
-.venv/
-__pycache__/
-*.py[cod]
-*.sqlite3
-staticfiles/
-media/
+# Maven
+target/
+.mvn/wrapper/maven-wrapper.jar
+.flattened-pom.xml
+
+# Gradle (nếu chuyển sau này)
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+nbproject/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
