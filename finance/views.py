@@ -28,26 +28,55 @@ from .notification_service import check_large_transaction, check_budget_exceeded
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def api_root(request):
-    """Root API endpoint"""
+    """Root API endpoint with HTTP methods for each endpoint"""
     return Response({
         'message': 'Finance Management System API',
         'version': '1.0.0',
         'endpoints': {
             'auth': {
-                'register': '/api/auth/register/',
-                'login': '/api/auth/login/',
-                'profile': '/api/auth/profile/',
+                'register': {'path': '/api/auth/register/', 'methods': ['POST']},
+                'login': {'path': '/api/auth/login/', 'methods': ['POST']},
+                'profile': {'path': '/api/auth/profile/', 'methods': ['GET']},
+                'preferences': {'path': '/api/auth/preferences/', 'methods': ['GET','PUT','PATCH']},
             },
-            'transactions': '/api/transactions/',
-            'categories': '/api/categories/',
-            'statistics': '/api/transactions/statistics/',
+            'categories': {
+                'list_create': {'path': '/api/categories/', 'methods': ['GET','POST']},
+                'detail': {'path': '/api/categories/{id}/', 'methods': ['GET','PUT','PATCH','DELETE']},
+            },
+            'transactions': {
+                'list_create': {'path': '/api/transactions/', 'methods': ['GET','POST']},
+                'detail': {'path': '/api/transactions/{id}/', 'methods': ['GET','PUT','PATCH','DELETE']},
+                'statistics': {'path': '/api/transactions/statistics/', 'methods': ['GET']},
+                'expenses': {'path': '/api/transactions/expenses/', 'methods': ['GET']},
+                'nlp_input': {'path': '/api/transactions/nlp_input/', 'methods': ['POST']},
+                'ocr_receipt': {'path': '/api/transactions/ocr_receipt/', 'methods': ['POST']},
+                'sync': {'path': '/api/transactions/sync/', 'methods': ['GET']},
+                'bulk_sync': {'path': '/api/transactions/bulk_sync/', 'methods': ['POST']},
+                'nlp_query': {'path': '/api/transactions/nlp_query/', 'methods': ['POST']},
+            },
+            'budgets': {
+                'list_create': {'path': '/api/budgets/', 'methods': ['GET','POST']},
+                'detail': {'path': '/api/budgets/{id}/', 'methods': ['GET','PUT','PATCH','DELETE']},
+                'sync': {'path': '/api/budgets/sync/', 'methods': ['GET']},
+            },
+            'notifications': {
+                'list_create': {'path': '/api/notifications/', 'methods': ['GET','POST']},
+                'detail': {'path': '/api/notifications/{id}/', 'methods': ['GET','PUT','PATCH','DELETE']},
+                'mark_read': {'path': '/api/notifications/{id}/mark_read/', 'methods': ['POST']},
+                'mark_all_read': {'path': '/api/notifications/mark_all_read/', 'methods': ['POST']},
+                'unread_count': {'path': '/api/notifications/unread_count/', 'methods': ['GET']},
+            },
+            'reports': {
+                'custom': {'path': '/api/reports/custom/', 'methods': ['POST']},
+            },
             'ai': {
-                'trends': '/api/ai/trends/',
-                'predictions': '/api/ai/predictions/',
-                'anomalies': '/api/ai/anomalies/',
-                'savings': '/api/ai/savings-suggestions/',
+                'trends': {'path': '/api/ai/trends/', 'methods': ['GET']},
+                'predictions': {'path': '/api/ai/predictions/', 'methods': ['GET']},
+                'anomalies': {'path': '/api/ai/anomalies/', 'methods': ['GET']},
+                'savings': {'path': '/api/ai/savings-suggestions/', 'methods': ['GET']},
             },
-            'chatbot': '/api/chatbot/',
+            'chatbot': {'path': '/api/chatbot/', 'methods': ['POST']},
+            'mobile_sync': {'path': '/api/sync/all/', 'methods': ['GET']},
         }
     })
 
