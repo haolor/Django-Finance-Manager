@@ -550,28 +550,29 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Tìm hoặc tạo category
+            # Hóa đơn OCR luôn được xử lý như chi tiêu.
+            # Nếu AI đoán ra category thuộc nhóm thu nhập, backend sẽ đổi sang category chi tiêu an toàn.
+            transaction_type = 'expense'
             category = None
-            transaction_type = transaction_info.get('type', 'expense') or 'expense'
-            if transaction_info.get('category'):
+            requested_category = transaction_info.get('category')
+            if requested_category:
                 try:
-                    category = NLPService.get_or_create_category(
-                        transaction_info['category'],
-                        transaction_type
-                    )
+                    category = NLPService.get_or_create_category(requested_category, transaction_type)
+                    if category and category.type != 'expense':
+                        category = None
                 except Exception:
                     category = None
 
             # Fallback category to avoid uncategorized OCR transactions.
             if category is None:
-                fallback_name = 'Chi tiêu khác' if transaction_type == 'expense' else 'Thu nhập khác'
+                fallback_name = 'Chi tiêu khác'
                 category, _ = Category.objects.get_or_create(
                     name=fallback_name,
                     defaults={
-                        'type': transaction_type,
+                        'type': 'expense',
                         'icon': '🧾',
                         'color': '#6B7280',
-                        'description': 'Tự động tạo từ OCR khi không xác định được danh mục'
+                        'description': 'Tự động tạo từ OCR hóa đơn'
                     }
                 )
             

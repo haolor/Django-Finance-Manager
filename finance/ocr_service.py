@@ -2,6 +2,7 @@
 OCR Service for extracting text from receipt/invoice images
 """
 import re
+import json
 import unicodedata
 from typing import Dict, Optional, List
 from decimal import Decimal
@@ -590,5 +591,60 @@ class OCRService:
                 'success': False,
                 'error': f'Lỗi khi xử lý ảnh: {str(e)}',
                 'raw_text': ''
+            }
+    
+    @staticmethod
+    def parse_receipt_by_template(ocr_text: str) -> Dict:
+        """
+        Parse receipt by template using AI (for standard Vietnamese invoices)
+        Template fields: Tên khách hàng, Địa chỉ, Bảng hóa đơn, Tổng tiền, Hạn thanh toán
+        """
+        try:
+            from .openrouter_service import OpenrouterService
+            import json
+            
+            system_prompt = """Bạn là AI chuyên phân tích hóa đơn tiếng Việt theo template chuẩn.
+Template hóa đơn bao gồm:
+- Tên khách hàng (Họ tên khách hàng)
+- Địa chỉ (Địa chỉ)
+- Bảng hóa đơn: TÊN HÀNG, Số lượng, Đơn giá, Thành tiền
+- Cộng (Tổng tiền)
+- Hạn thanh toán (ngày hạn thanh toán)
+
+Trích xuất thông tin theo template này và trả về JSON:
+{
+  "customer_name": "<tên khách hàng hoặc null>",
+  "address": "<địa chỉ hoặc null>",
+  "items": [
+    {"name": "<tên hàng>", "quantity": <số lượng>, "unit_price": <đơn giá>, "total": <thành tiền>}
+  ],
+  "total_amount": <tổng tiền>,
+  "payment_deadline": "<ngày hạn thanh toán YYYY-MM-DD hoặc null>"
+}
+
+Ghi chú:
+- Tất cả số tiền là số nguyên (ví dụ 50000 cho 50k)
+- Nếu không có trường, để null
+- Luôn trả về JSON hợp lệ, không có markdown"""
+            
+            user_prompt = f"Phân tích hóa đơn theo template:\n\n{ocr_text}"
+            response = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+            
+            # Parse JSON response
+            data = json.loads(response)
+            
+            return {
+                'success': True,
+                'customer_name': data.get('customer_name'),
+                'address': data.get('address'),
+                'items': data.get('items', []),
+                'total_amount': data.get('total_amount'),
+                'payment_deadline': data.get('payment_deadline'),
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Lỗi khi phân tích template: {str(e)}'
             }
 
