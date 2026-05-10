@@ -6,6 +6,7 @@ import { PlusIcon, PencilIcon, TrashIcon, MicrophoneIcon, ChevronLeftIcon, Chevr
 function Transactions() {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
@@ -38,7 +39,7 @@ function Transactions() {
   })
 
   useEffect(() => {
-    fetchData(1)
+    fetchData(1, '')
     fetchCategories()
   }, [])
 
@@ -51,10 +52,15 @@ function Transactions() {
     }
   }
 
-  const fetchData = async (page = 1) => {
+  const fetchData = async (page = 1, categoryId = selectedCategory) => {
     setLoading(true)
     try {
-      const transactionsRes = await api.get(`/transactions/?page=${page}`)
+      const params = new URLSearchParams({ page: String(page) })
+      if (categoryId) {
+        params.set('category', categoryId)
+      }
+
+      const transactionsRes = await api.get(`/transactions/?${params.toString()}`)
       const data = transactionsRes.data
       
       // Handle paginated response
@@ -89,10 +95,15 @@ function Transactions() {
 
   const handlePageChange = (page) => {
     if (page >= 1 && page <= pagination.totalPages) {
-      fetchData(page)
+      fetchData(page, selectedCategory)
       // Scroll to top of table
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
+  }
+
+  const handleCategoryChange = (categoryId) => {
+    setSelectedCategory(categoryId)
+    fetchData(1, categoryId)
   }
 
   // Khởi tạo Speech Recognition
@@ -180,7 +191,7 @@ function Transactions() {
       setNlpInput('')
       setShowNlpModal(false)
       setNlpError('')
-      fetchData(1) // Reload first page
+      fetchData(1, selectedCategory) // Reload first page
       // Hiển thị thông báo thành công
       alert('Đã thêm giao dịch thành công!')
     } catch (error) {
@@ -210,7 +221,7 @@ function Transactions() {
         category: '',
         transaction_date: format(new Date(), 'yyyy-MM-dd'),
       })
-      fetchData(pagination.currentPage) // Reload current page
+      fetchData(pagination.currentPage, selectedCategory) // Reload current page
     } catch (error) {
       alert('Có lỗi xảy ra. Vui lòng thử lại.')
     }
@@ -222,9 +233,9 @@ function Transactions() {
         await api.delete(`/transactions/${id}/`)
         // If current page becomes empty, go to previous page
         if (transactions.length === 1 && pagination.currentPage > 1) {
-          fetchData(pagination.currentPage - 1)
+          fetchData(pagination.currentPage - 1, selectedCategory)
         } else {
-          fetchData(pagination.currentPage)
+          fetchData(pagination.currentPage, selectedCategory)
         }
       } catch (error) {
         alert('Không thể xóa giao dịch.')
@@ -368,6 +379,25 @@ function Transactions() {
             Thêm giao dịch
           </button>
         </div>
+      </div>
+
+      <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="category-filter">
+          Lọc theo danh mục
+        </label>
+        <select
+          id="category-filter"
+          value={selectedCategory}
+          onChange={(e) => handleCategoryChange(e.target.value)}
+          className="w-full sm:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+        >
+          <option value="">Tất cả danh mục</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* NLP Modal */}
