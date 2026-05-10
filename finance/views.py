@@ -20,7 +20,7 @@ from .serializers import (
 )
 from .nlp_service import NLPService
 from .ai_service import AIService
-from .gemini_service import GeminiService
+from .openrouter_service import OpenrouterService
 from .ocr_service import OCRService
 from .notification_service import check_large_transaction, check_budget_exceeded, create_anomaly_notification
 
@@ -326,32 +326,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
         check_large_transaction(transaction)
         if transaction.category:
             check_budget_exceeded(self.request.user, transaction.category)
-        
-        # Kiểm tra anomaly và tạo notification
-        try:
-            # Phát hiện anomalies
-            anomalies = AIService.detect_anomalies(self.request.user, days=30)
-            # Kiểm tra xem transaction vừa tạo có phải là anomaly không
-            for anomaly in anomalies:
-                if anomaly['id'] == transaction.id:
-                    # Tạo notification cho anomaly này
-                    anomaly_data = {
-                        'transaction': transaction,
-                        'amount': transaction.amount,
-                        'category': transaction.category.name if transaction.category else 'Khác',
-                    }
-                    create_anomaly_notification(self.request.user, anomaly_data)
-                    break
-        except Exception as e:
-            # Không block nếu anomaly detection thất bại
-            print(f"Error detecting anomaly: {e}")
-        
-        # Cập nhật spending patterns
-        try:
-            AIService.update_spending_patterns(self.request.user)
-        except Exception:
-            # Không block nếu update pattern thất bại
-            pass
     
     @action(detail=False, methods=['post'])
     def nlp_input(self, request):
@@ -400,32 +374,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             check_large_transaction(transaction)
             if transaction.category:
                 check_budget_exceeded(request.user, transaction.category)
-            
-            # Kiểm tra anomaly và tạo notification
-            try:
-                # Phát hiện anomalies
-                anomalies = AIService.detect_anomalies(request.user, days=30)
-                # Kiểm tra xem transaction vừa tạo có phải là anomaly không
-                for anomaly in anomalies:
-                    if anomaly['id'] == transaction.id:
-                        # Tạo notification cho anomaly này
-                        anomaly_data = {
-                            'transaction': transaction,
-                            'amount': transaction.amount,
-                            'category': transaction.category.name if transaction.category else 'Khác',
-                        }
-                        create_anomaly_notification(request.user, anomaly_data)
-                        break
-            except Exception as e:
-                # Không block nếu anomaly detection thất bại
-                print(f"Error detecting anomaly: {e}")
-            
-            # Cập nhật spending patterns
-            try:
-                AIService.update_spending_patterns(request.user)
-            except Exception:
-                # Không block nếu update pattern thất bại
-                pass
             
             serializer = self.get_serializer(transaction)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -641,12 +589,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             check_large_transaction(transaction)
             if transaction.category:
                 check_budget_exceeded(request.user, transaction.category)
-            
-            # Cập nhật spending patterns
-            try:
-                AIService.update_spending_patterns(request.user)
-            except Exception:
-                pass
             
             serializer = self.get_serializer(transaction)
             return Response({
@@ -1073,10 +1015,18 @@ def ai_trends(request):
         except ValueError:
             end = None
 
-    if start and end:
-        trends = AIService.analyze_spending_trends(request.user, start_date=start, end_date=end)
-    else:
-        trends = AIService.analyze_spending_trends(request.user, int(days))
+    try:
+        if start and end:
+            trends = OpenrouterService.analyze_trends_with_ai(request.user, start_date=start, end_date=end)
+        else:
+            trends = OpenrouterService.analyze_trends_with_ai(request.user)
+    except Exception as exc:
+        if start and end:
+            trends = AIService.analyze_spending_trends(request.user, start_date=start, end_date=end)
+        else:
+            trends = AIService.analyze_spending_trends(request.user, int(days))
+        trends['fallback_reason'] = str(exc)
+        trends['provider'] = 'local-fallback'
     return Response(trends)
 
 
@@ -1101,13 +1051,13 @@ def ai_predictions(request):
 
     try:
         if start and end:
-            predictions = GeminiService.predict_next_month_spending_with_ai(
+            predictions = OpenrouterService.predict_next_month_spending_with_ai(
                 request.user, start_date=start, end_date=end
             )
         else:
-            predictions = GeminiService.predict_next_month_spending_with_ai(request.user)
+            predictions = OpenrouterService.predict_next_month_spending_with_ai(request.user)
     except Exception as exc:
-        # Fallback để API không fail nếu Gemini có sự cố
+        # Fallback để API không fail nếu OpenRouter có sự cố
         if start and end:
             predictions = AIService.predict_next_month_spending(request.user, start_date=start, end_date=end)
         else:
@@ -1138,10 +1088,21 @@ def ai_anomalies(request):
         except ValueError:
             end = None
 
-    if start and end:
-        anomalies = AIService.detect_anomalies(request.user, start_date=start, end_date=end)
-    else:
-        anomalies = AIService.detect_anomalies(request.user, int(days))
+    try:
+        if start and end:
+            anomalies = OpenrouterService.detect_anomalies_with_ai(request.user, start_date=start, end_date=end)
+        else:
+            anomalies = OpenrouterService.detect_anomalies_with_ai(request.user)
+    except Exception as exc:
+        if start and end:
+            anomalies = AIService.detect_anomalies(request.user, start_date=start, end_date=end)
+        else:
+            anomalies = AIService.detect_anomalies(request.user, int(days))
+        # Wrap fallback results if needed
+        # AIService.detect_anomalies already returns a list of dicts
+        for a in anomalies:
+            a['provider'] = 'local-fallback'
+    
     return Response({'anomalies': anomalies})
 
 
@@ -1164,10 +1125,18 @@ def ai_savings_suggestions(request):
         except ValueError:
             end = None
 
-    if start and end:
-        suggestions = AIService.suggest_savings_plan(request.user, start_date=start, end_date=end)
-    else:
-        suggestions = AIService.suggest_savings_plan(request.user)
+    try:
+        if start and end:
+            suggestions = OpenrouterService.suggest_savings_with_ai(request.user, start_date=start, end_date=end)
+        else:
+            suggestions = OpenrouterService.suggest_savings_with_ai(request.user)
+    except Exception as exc:
+        if start and end:
+            suggestions = AIService.suggest_savings_plan(request.user, start_date=start, end_date=end)
+        else:
+            suggestions = AIService.suggest_savings_plan(request.user)
+        suggestions['fallback_reason'] = str(exc)
+        suggestions['provider'] = 'local-fallback'
     return Response(suggestions)
 
 
@@ -1185,15 +1154,15 @@ def chatbot(request):
     message_lower = message.lower()
 
     try:
-        ai_response = GeminiService.get_chat_response(request.user, message)
+        ai_response = OpenrouterService.get_chat_response(request.user, message)
         return Response({
             'message': message,
             'response': ai_response,
-            'provider': 'gemini',
-            'model': getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash'),
+            'provider': 'openrouter',
+            'model': OpenrouterService._get_model(),
         })
     except Exception as exc:
-        # Nếu Gemini lỗi thì fallback về rule-based hiện tại
+        # Nếu Openrouter lỗi thì fallback về rule-based hiện tại
         fallback_error = str(exc)
     
     # Xử lý các loại câu hỏi khác nhau

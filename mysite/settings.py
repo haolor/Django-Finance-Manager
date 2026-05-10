@@ -50,7 +50,7 @@ _load_env_file(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-)7@yd!*8z-o!fzm03z+@cq^1qrykgt1+x4#w+@&ak#*!v3j-+#'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-)7@yd!*8z-o!fzm03z+@cq^1qrykgt1+x4#w+@&ak#*!v3j-+#')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -110,12 +110,12 @@ WSGI_APPLICATION = 'mysite.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'finance_db',
-        'USER': 'postgres',
-        'PASSWORD': 'Haovip1!',
-        'HOST': '127.0.0.1',
-        'PORT': '5432',
+        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.environ.get('DB_NAME', 'finance_db'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'password'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -223,6 +223,9 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'kien06112004@gmail.com')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'latt xemx sczh vemw')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Finance Manager <noreply@financemanager.com>')
 
-# Gemini (LLM)
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyA4cTNdIxx8nfq8zgvHkLwKq5PNDDiyF8w')
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3-flash-preview')
+# OpenRouter (AI)
+# Primary source: `AI_MODEL` env var; fallback to a sane default.
+AI_MODEL = os.environ.get('AI_MODEL', 'openai/gpt-oss-120b:free')
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+# Keep a single authoritative model value: use `AI_MODEL` for OpenRouter as well.
+OPENROUTER_MODEL = AI_MODEL

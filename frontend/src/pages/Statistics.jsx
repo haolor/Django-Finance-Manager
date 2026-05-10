@@ -137,18 +137,20 @@ function Statistics() {
             ) : (
               <PieChart>
                 <Pie
-                  data={stats?.by_date?.map(d => ({ name: d.date, income: d.income || 0, expense: d.expense || 0 })) || []}
+                  data={[
+                    { name: 'Thu nhập', value: stats?.by_date?.reduce((sum, d) => sum + (d.income || 0), 0) || 0 },
+                    { name: 'Chi tiêu', value: stats?.by_date?.reduce((sum, d) => sum + (d.expense || 0), 0) || 0 }
+                  ]}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name }) => name}
+                  label={({ name, value }) => `${name}: ${(value / 1000).toFixed(0)}k`}
                   outerRadius={80}
                   fill="#8884d8"
-                  dataKey="income"
+                  dataKey="value"
                 >
-                  {(stats?.by_date || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
+                  <Cell fill="#10B981" />
+                  <Cell fill="#EF4444" />
                 </Pie>
                 <Tooltip contentStyle={{ 
                   backgroundColor: isDark ? '#374151' : '#ffffff', 
@@ -161,32 +163,62 @@ function Statistics() {
           </ResponsiveContainer>
         </div>
 
-        {/* Category Pie Chart */}
+        {/* Category Chart */}
         <div className="bg-white dark:bg-gray-700 rounded-lg shadow p-4 md:p-6">
           <h2 className="text-lg md:text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Chi tiêu theo Danh mục</h2>
           <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
-            <PieChart>
-              <Pie
-                data={stats?.by_category?.filter(c => c.category__type === 'expense') || []}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ category__name, total }) => `${category__name}: ${(total / 1000).toFixed(0)}k`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="total"
-              >
-                {(stats?.by_category?.filter(c => c.category__type === 'expense') || []).map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ 
-                backgroundColor: isDark ? '#374151' : '#ffffff', 
-                border: isDark ? '1px solid #4b5563' : '1px solid #e5e7eb', 
-                borderRadius: '8px', 
-                color: isDark ? '#f9fafb' : '#111827' 
-              }} />
-            </PieChart>
+            {chartType === 'line' ? (
+              <LineChart data={stats?.by_category?.filter(c => c.category__type === 'expense') || []}>
+                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#6b7280' : '#e5e7eb'} />
+                <XAxis dataKey="category__name" angle={-45} textAnchor="end" height={100} stroke={isDark ? '#9ca3af' : '#6b7280'} />
+                <YAxis stroke={isDark ? '#9ca3af' : '#6b7280'} />
+                <Tooltip contentStyle={{ 
+                  backgroundColor: isDark ? '#374151' : '#ffffff', 
+                  border: isDark ? '1px solid #4b5563' : '1px solid #e5e7eb', 
+                  borderRadius: '8px', 
+                  color: isDark ? '#f9fafb' : '#111827' 
+                }} />
+                <Legend wrapperStyle={{ color: isDark ? '#d1d5db' : '#6b7280' }} />
+                <Line type="monotone" dataKey="total" stroke="#EF4444" name="Chi tiêu" />
+              </LineChart>
+            ) : chartType === 'bar' ? (
+              <BarChart data={stats?.by_category?.filter(c => c.category__type === 'expense') || []}>
+                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#6b7280' : '#e5e7eb'} />
+                <XAxis dataKey="category__name" angle={-45} textAnchor="end" height={100} stroke={isDark ? '#9ca3af' : '#6b7280'} />
+                <YAxis stroke={isDark ? '#9ca3af' : '#6b7280'} />
+                <Tooltip contentStyle={{ 
+                  backgroundColor: isDark ? '#374151' : '#ffffff', 
+                  border: isDark ? '1px solid #4b5563' : '1px solid #e5e7eb', 
+                  borderRadius: '8px', 
+                  color: isDark ? '#f9fafb' : '#111827' 
+                }} />
+                <Legend wrapperStyle={{ color: isDark ? '#d1d5db' : '#6b7280' }} />
+                <Bar dataKey="total" fill="#EF4444" name="Chi tiêu" />
+              </BarChart>
+            ) : (
+              <PieChart>
+                <Pie
+                  data={stats?.by_category?.filter(c => c.category__type === 'expense') || []}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ category__name, total }) => `${category__name}: ${(total / 1000).toFixed(0)}k`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="total"
+                >
+                  {(stats?.by_category?.filter(c => c.category__type === 'expense') || []).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ 
+                  backgroundColor: isDark ? '#374151' : '#ffffff', 
+                  border: isDark ? '1px solid #4b5563' : '1px solid #e5e7eb', 
+                  borderRadius: '8px', 
+                  color: isDark ? '#f9fafb' : '#111827' 
+                }} />
+              </PieChart>
+            )}
           </ResponsiveContainer>
         </div>
       </div>
