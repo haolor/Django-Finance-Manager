@@ -2,6 +2,8 @@
 OpenRouter service for AI chat responses and predictions.
 """
 import json
+import logging
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, date
@@ -13,6 +15,9 @@ from django.contrib.auth.models import User
 from django.db.models import Count, Sum
 
 from .models import Transaction
+
+# Setup logging for AI usage tracking
+logger = logging.getLogger(__name__)
 
 
 class OpenrouterService:
@@ -32,7 +37,7 @@ class OpenrouterService:
         return getattr(settings, "AI_MODEL", OpenrouterService.DEFAULT_MODEL)
 
     @staticmethod
-    def _call_generate_content(system_prompt: str, user_prompt: str) -> str:
+    def _call_generate_content(system_prompt: str, user_prompt: str, endpoint: str = "unknown") -> str:
         api_key = OpenrouterService._get_api_key()
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY is not configured")
@@ -67,6 +72,7 @@ class OpenrouterService:
             },
         )
 
+        start_time = time.time()
         try:
             with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
                 data = json.loads(response.read().decode("utf-8"))
@@ -75,6 +81,8 @@ class OpenrouterService:
             raise RuntimeError(f"AI API HTTPError {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"AI API URLError: {exc.reason}") from exc
+        
+        response_time = time.time() - start_time
 
         choices = data.get("choices", [])
         if not choices:
@@ -84,6 +92,18 @@ class OpenrouterService:
 
         if not text:
             raise RuntimeError(f"AI response has empty content: {data}")
+        
+        # Extract and log token usage
+        usage = data.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", 0)
+        
+        logger.info(
+            f"🤖 AI API Call | Endpoint: {endpoint:20s} | Model: {model:30s} | "
+            f"Tokens: {total_tokens:5d} (↓{prompt_tokens:4d}/↑{completion_tokens:4d}) | "
+            f"Time: {response_time:.2f}s"
+        )
 
         return text
 
@@ -156,7 +176,7 @@ class OpenrouterService:
             f"Du lieu tai chinh (JSON):\n{json.dumps(finance_context, ensure_ascii=True)}\n\n"
             "Hay tra loi bang tieng Viet, co so lieu cu the neu co."
         )
-        return OpenrouterService._call_generate_content(system_prompt, user_prompt)
+        return OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="chatbot")
 
     @staticmethod
     def predict_next_month_spending_with_ai(
@@ -181,7 +201,7 @@ class OpenrouterService:
             "}"
         )
 
-        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="predictions")
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         parsed = json.loads(cleaned)
 
@@ -222,7 +242,7 @@ class OpenrouterService:
             "}"
         )
 
-        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="trends")
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         parsed = json.loads(cleaned)
         
@@ -256,7 +276,7 @@ class OpenrouterService:
             "}"
         )
 
-        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="anomalies")
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         return json.loads(cleaned)
 
@@ -286,7 +306,7 @@ class OpenrouterService:
             "}"
         )
 
-        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+        raw = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="savings")
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         parsed = json.loads(cleaned)
         

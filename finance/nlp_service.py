@@ -52,7 +52,7 @@ Ghi chú:
 """
             
             user_prompt = f"Trích xuất tất cả giao dịch: {text}"
-            response = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+            response = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="nlp_input")
             
             # Parse multiple JSON objects (one per line)
             transactions = []
@@ -170,7 +170,7 @@ Ghi chú:
 """
             
             user_prompt = f"Phân tích truy vấn: {text}"
-            response = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+            response = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="nlp_query")
             
             data = json.loads(response)
             

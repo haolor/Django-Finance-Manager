@@ -628,7 +628,7 @@ Ghi chú:
 - Luôn trả về JSON hợp lệ, không có markdown"""
             
             user_prompt = f"Phân tích hóa đơn theo template:\n\n{ocr_text}"
-            response = OpenrouterService._call_generate_content(system_prompt, user_prompt)
+            response = OpenrouterService._call_generate_content(system_prompt, user_prompt, endpoint="ocr_template")
             
             # Parse JSON response
             data = json.loads(response)
